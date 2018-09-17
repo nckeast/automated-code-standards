@@ -1,0 +1,576 @@
+Include (Studio.Extension.CodeStandards, %occErrors)
+
+/// Example of automating code standards
+Class Studio.Extension.CodeStandards Extends Studio.SourceControl.GIT
+{
+
+Method OnAfterSave(InternalName As %String, Object As %RegisteredObject) As %Status
+{
+	// Execute source control hook
+	set status = ##super(InternalName, .Object) 
+	if $$$ISERR(status) quit status
+	
+	// Execute code standards checks
+	set status = ..ParseDocument(InternalName, .Object) 
+	quit status
+}
+
+ClassMethod ParseDocument(InternalName As %String, Object As %RegisteredObject) As %Status
+{
+	set status = $$$OK
+	
+	set type = ..GetDocumentType(InternalName) 
+	set name = $piece(InternalName, ".", 1, $length(InternalName, ".") - 1) 
+	
+	if type = "class" {
+		quit ..Class(name, 1) 
+	}
+	
+	if type = "routine" {
+		quit ..Routine(name, 1) 
+	}
+	
+	if type = "csp" {
+		quit ..CSP(InternalName, 1) 
+	}	
+	
+	quit status
+}
+
+/// helper function to determine document type
+ClassMethod GetDocumentType(InternalName As %String) As %String
+{
+	set extension = $zconvert($piece(InternalName, ".", * ) , "U") 
+	quit $case(extension, 
+		"CLS":"class", 
+		"CSP":"csp", 
+		"CSR":"csp", 
+		"PRJ":"project", 
+		"INC":"routine", 
+		"INT":"routine", 
+		"MAC":"routine", 
+		"BAS":"routine", 
+		"JS":"javascript", 
+		"CSS":"javascript", 
+		:"other")
+}
+
+/// Process all methods in a class
+ClassMethod Class(ClassName As %String, SaveChanges = 0) As %Status
+{
+	set classDefinition = ##class(%Dictionary.ClassDefinition).%OpenId(ClassName, , .status) 
+	if $$$ISERR(status) quit status
+	
+	for j = 1:1:classDefinition.Methods.Count() {
+		set methodDefinition = classDefinition.Methods.GetAt(j) 
+		
+		if methodDefinition.CodeMode = "expression" continue
+		if methodDefinition.ClientMethod {
+			do ..ProcessStream(methodDefinition.Implementation, methodDefinition.Language, "Method:" _ ClassName _ ":" _ methodDefinition.Name) 
+		} else {
+			do ..ProcessStream(methodDefinition.Implementation, , "Method:" _ ClassName _ ":" _ methodDefinition.Name) 
+		}
+	}
+	for j = 1:1:classDefinition.Queries.Count() {
+		set queryDefinition = classDefinition.Queries.GetAt(j) 
+		
+		// copy to a stream
+		set queryStream = ##class(%Stream.TmpCharacter).%New() 
+		do queryStream.Rewind() 
+		
+		set lineCount = $length(queryDefinition.SqlQuery, $char(13, 10) ) 
+		for lineNumber = 1:1:lineCount {
+			do queryStream.WriteLine($piece(queryDefinition.SqlQuery, $char(13, 10) , lineNumber) ) 
+		}
+		// process the stream
+		do ..ProcessStream(queryStream, "SQL", "Query:" _ ClassName _ ":" _ queryDefinition.Name) 
+		// and copy from stream back to string
+		do queryStream.Rewind() 
+		set queryString = ""
+		while 'queryStream.AtEnd {
+			set line = queryStream.ReadLine() 
+			set queryString = queryString _ $select(queryString '= "":$char(13, 10) , 1:"") _ line
+		}
+		set queryDefinition.SqlQuery = queryString
+	}
+	if SaveChanges {
+		set status = classDefinition.%Save() 
+		quit status
+	}
+	quit $$$OK
+}
+
+/// Process a routine
+ClassMethod Routine(RoutineName As %String, SaveChanges = 0) As %Status
+{
+	set routine = ##class(%Library.Routine).%OpenId(RoutineName, .status) 
+	do ..ProcessStream(routine, , "Routine:" _ RoutineName) 
+	
+	if SaveChanges {
+		set status = routine.%Save() 
+		quit status
+	}
+	quit $$$OK
+}
+
+/// Process a CSP file
+ClassMethod CSP(CSPName As %String, SaveChanges = 0) As %Status
+{
+	set cspFilename = $system.CSP.GetFileName(CSPName) 
+	if '##class(%File).Exists(cspFilename) quit $$$FileNotFound
+	
+	set file = ##class(%File).%New(cspFilename) 
+	set status = file.Open("RS") 
+	if $$$ISERR(status) do $system.OBJ.DisplayError(status) quit status
+	
+	do file.Close() 
+	// copy from file to stream
+	set streamout = ##class(%Stream.FileCharacter).%New() 
+	set streamout.Filename = cspFilename
+	
+	// replace the stream was HTML
+	do ..ProcessStream(streamout, "CSP", "CSP:" _ CSPName) 
+	
+	if SaveChanges {
+		// write stream back to file
+		do streamout.Rewind() 
+		set status = streamout.%Save() 
+		if $$$ISERR(status) do $system.OBJ.DisplayError(status) quit status
+	}
+	
+	quit $$$OK
+}
+
+/// Process a stream
+ClassMethod ProcessStream(ByRef CodeStream, Language = "COS", Info)
+{
+	set syntaxStream = ##class(%Stream.TmpCharacter).%New() 
+	do syntaxStream.Rewind() 
+	
+	set debug = 0
+	set syntaxColor = ##class(%SyntaxColor).%New() 
+	set flags = "PFCE"
+	set returnValue = syntaxColor.Color(CodeStream, .syntaxStream, Language, flags, , , .langs, .syntaxErrors) 
+	if 'returnValue {
+		write "Fatal error: ", Info, " ", syntaxColor.DLLResultCode, ! 
+		quit
+	}
+	if syntaxErrors {
+		write "Syntax error(s): ", Info, !
+		quit
+	}
+	
+	// Build local cache of mapped commands
+	if '$$$MappedValuesExist do ..InitialiseMap()
+	
+	do syntaxStream.Rewind() 
+	
+	set (lastLang, lastType, lastFrag) = ""
+	set (thisLang, thisType, thisFrag) = ""
+	set (nextLang, nextType, nextFrag) = ""
+	set newLineCount = 0
+	
+	while 'syntaxStream.AtEnd {
+		set lastLang = thisLang
+		set lastType = thisType
+		set lastFrag = thisFrag
+		
+		set thisLang = nextLang
+		set thisType = nextType
+		set thisFrag = nextFrag
+		
+		set line = syntaxStream.ReadLine() 
+		set nextLang = $piece(line, ",", 1) 
+		set nextType = $piece(line, ",", 2) 
+		set nextFrag = $piece(line, ",", 3, *) 
+		
+		if thisLang = "\n" {
+			// Count consecutive new lines
+			// if more than 3 (i.e. 2 blank lines in a row) then ignore any subsequent ones
+			// seems to add extra blank lines around the 32K mark for large methods - so this stops the proliferation
+			set newLineCount = newLineCount + 1
+			if newLineCount < 4 do CodeStream.WriteLine() 
+			continue
+		} else {
+			// Reset count of consecutive new lines
+			set newLineCount = 0
+		}
+		
+		if thisLang = "COS" {
+			// ##class
+			if thisType = $$$COSObjectClass {
+				do CodeStream.Write("##class") 
+				continue
+			}
+			// &sql
+			if thisType = $$$COSSQL {
+				set convFrag = $zconvert(thisFrag, "U") 
+				do CodeStream.Write(convFrag) 
+				continue
+			}
+			// &javascript
+			if thisType = $$$COSJavascript {
+				set convFrag = $zconvert(thisFrag, "L") 
+				if convFrag = "js" set convFrag = "javascript"
+				do CodeStream.Write(convFrag) 
+				continue
+			}
+			// &html
+			if thisType = $$$COSHTML {
+				set convFrag = $zconvert(thisFrag, "L") 
+				do CodeStream.Write(convFrag) 
+				continue
+			}
+			if thisType = $$$COSPreProcessorCommand {
+				set convFrag = $zconvert(thisFrag, "L") 
+				do CodeStream.Write(convFrag) 
+				continue
+			}
+			if thisType = $$$COSComment {
+				set convFrag = thisFrag
+				
+				// Use double slash for single line comments 
+				// Leave the double semi-colon as this will retain the comment.
+				if $extract(thisFrag, 1) = ";", $extract(thisFrag, 1, 2) '= ";;" set convFrag = "//" _ $extract(thisFrag, 2, * ) 
+				if $extract(thisFrag, 1, 2) = "#;" set convFrag = "//" _ $extract(thisFrag, 3, * ) 
+				if $extract(thisFrag, 1, 3) = "##;" set convFrag = "//" _ $extract(thisFrag, 4, * ) 
+				if $extract(convFrag, 1, 2) = "//", $extract(convFrag, 3) '= " " set convFrag = "// " _ $extract(thisFrag, 3, * ) 
+				do CodeStream.Write(convFrag) 
+				continue
+			}
+			// Function or Command or Special Variables
+			if (thisType = $$$COSFunction) || (thisFrag = $$$COSCommand) || (thisType = $$$COSSystemvariable) {
+				set convFrag = $zconvert(thisFrag, "L") 
+								
+				set function = $get(^||Studio.Extension.CodeStandards("Map", thisLang, thisType, convFrag) , convFrag) 
+				// Lower case functions, commands, and special variables
+				do CodeStream.Write($zconvert(function, "L") ) 
+				continue
+			}
+			// Operator
+			if thisType = $$$COSOperator {
+				set convFrag = $zconvert(thisFrag, "L") 
+				
+				if ".'" '[ convFrag {
+					// Include whitespace either side of operators except for by reference and not.
+					if lastType '= $$$COSWhiteSpace set convFrag = " " _ convFrag
+					if nextType '= $$$COSWhiteSpace set convFrag = convFrag _ " "
+				}
+				do CodeStream.Write(convFrag) 
+				continue
+			}
+			// Delimiter
+			if thisType = $$$COSDelimiter {
+				set convFrag = $zconvert(thisFrag, "L") 
+				
+				if convFrag = "," {
+					// Include whitespace before the next parameter.
+					if nextType '= $$$COSWhiteSpace set convFrag = convFrag _ " "
+				}	
+				do CodeStream.Write(convFrag) 
+				continue
+			}
+			do CodeStream.Write(thisFrag) 
+		} elseif thisLang = "SQL" {
+			// SQL keywords and operators
+			if thisType = $$$SQLStatementkeyword || (thisType = $$$SQLQualifierkeyword) || (thisType = $$$SQLOperator) {
+				// Upper case SQL keywords and operators
+				set convFrag = $zconvert(thisFrag, "U") 
+				do CodeStream.Write(convFrag) 
+				continue
+			} 
+			do CodeStream.Write(thisFrag) 
+		} elseif thisLang = "HTML" {
+			// <head></head>
+			// <csp:parameter> 
+			if thisType = $$$HTMLTag {
+				set convFrag = $zconvert(thisFrag, "L") 
+				// Convert <server> to <script language="cache" runat="server">
+				if convFrag = "server" {
+					set convFrag = "script"
+					if lastType = $$$HTMLDelimiter, lastFrag '= "/" set convFrag = convFrag _ " language=""cache"" runat=""server"""
+				}
+				do CodeStream.Write(convFrag) 
+				continue
+			}
+			do CodeStream.Write(thisFrag) 
+		} else {
+			do CodeStream.Write(thisFrag) 
+		}
+	}
+}
+
+ClassMethod InitialiseMap()
+{
+	set $$$MappedValue("COS", $$$COSFunction, "$a") = "$ascii"
+	set $$$MappedValue("COS", $$$COSFunction, "$ascii") = "$ascii"
+	set $$$MappedValue("COS", $$$COSFunction, "$bit") = "$bit"
+	set $$$MappedValue("COS", $$$COSFunction, "$bitcount") = "$bitcount"
+	set $$$MappedValue("COS", $$$COSFunction, "$bitfind") = "$bitfind"
+	set $$$MappedValue("COS", $$$COSFunction, "$bitlogic") = "$bitlogic"
+	set $$$MappedValue("COS", $$$COSFunction, "$case") = "$case"
+	set $$$MappedValue("COS", $$$COSFunction, "$c") = "$char"
+	set $$$MappedValue("COS", $$$COSFunction, "$char") = "$char"
+	set $$$MappedValue("COS", $$$COSFunction, "$classmethod") = "$classmethod"
+	set $$$MappedValue("COS", $$$COSFunction, "$classname") = "$classname"
+	set $$$MappedValue("COS", $$$COSFunction, "$d") = "$data"
+	set $$$MappedValue("COS", $$$COSFunction, "$data") = "$data"
+	set $$$MappedValue("COS", $$$COSFunction, "$decimal") = "$decimal"
+	set $$$MappedValue("COS", $$$COSFunction, "$double") = "$double"
+	set $$$MappedValue("COS", $$$COSFunction, "$e") = "$extract"
+	set $$$MappedValue("COS", $$$COSFunction, "$extract") = "$extract"
+	set $$$MappedValue("COS", $$$COSFunction, "$f") = "$find"
+	set $$$MappedValue("COS", $$$COSFunction, "$find") = "$find"
+	set $$$MappedValue("COS", $$$COSFunction, "$fn") = "$fnumber"
+	set $$$MappedValue("COS", $$$COSFunction, "$fnumber") = "$fnumber"
+	set $$$MappedValue("COS", $$$COSFunction, "$g") = "$get"
+	set $$$MappedValue("COS", $$$COSFunction, "$get") = "$get"
+	set $$$MappedValue("COS", $$$COSFunction, "$i") = "$increment"
+	set $$$MappedValue("COS", $$$COSFunction, "$increment") = "$increment"
+	set $$$MappedValue("COS", $$$COSFunction, "$isobject") = "$isobject"
+	set $$$MappedValue("COS", $$$COSFunction, "$isvalidnum") = "$isvalidnum"
+	set $$$MappedValue("COS", $$$COSFunction, "$j") = "$justify"
+	set $$$MappedValue("COS", $$$COSFunction, "$justify") = "$justify"
+	set $$$MappedValue("COS", $$$COSFunction, "$lb") = "$listbuild"
+	set $$$MappedValue("COS", $$$COSFunction, "$ld") = "$listdata"
+	set $$$MappedValue("COS", $$$COSFunction, "$l") = "$length"
+	set $$$MappedValue("COS", $$$COSFunction, "$length") = "$length"
+	set $$$MappedValue("COS", $$$COSFunction, "$lf") = "$listfind"
+	set $$$MappedValue("COS", $$$COSFunction, "$lfs") = "$listfromstring"
+	set $$$MappedValue("COS", $$$COSFunction, "$lg") = "$listget"
+	set $$$MappedValue("COS", $$$COSFunction, "$li") = "$list"
+	set $$$MappedValue("COS", $$$COSFunction, "$list") = "$list"
+	set $$$MappedValue("COS", $$$COSFunction, "$listbuild") = "$listbuild"
+	set $$$MappedValue("COS", $$$COSFunction, "$listdata") = "$listdata"
+	set $$$MappedValue("COS", $$$COSFunction, "$listfind") = "$listfind"
+	set $$$MappedValue("COS", $$$COSFunction, "$listfromstring") = "$listfromstring"
+	set $$$MappedValue("COS", $$$COSFunction, "$listget") = "$listget"
+	set $$$MappedValue("COS", $$$COSFunction, "$ll") = "$listlength"
+	set $$$MappedValue("COS", $$$COSFunction, "$listlength") = "$listlength"
+	set $$$MappedValue("COS", $$$COSFunction, "$listnext") = "$listnext"
+	set $$$MappedValue("COS", $$$COSFunction, "$listsame") = "$listsame"
+	set $$$MappedValue("COS", $$$COSFunction, "$listtostring") = "$listtostring"
+	set $$$MappedValue("COS", $$$COSFunction, "$listvalid") = "$listvalid"
+	set $$$MappedValue("COS", $$$COSFunction, "$locate") = "$locate"
+	set $$$MappedValue("COS", $$$COSFunction, "$lts") = "$listtostring"
+	set $$$MappedValue("COS", $$$COSFunction, "$lv") = "$listvalid"
+	set $$$MappedValue("COS", $$$COSFunction, "$match") = "$match"
+	set $$$MappedValue("COS", $$$COSFunction, "$method") = "$method"
+	set $$$MappedValue("COS", $$$COSFunction, "$na") = "$name"
+	set $$$MappedValue("COS", $$$COSFunction, "$name") = "$name"
+	set $$$MappedValue("COS", $$$COSFunction, "$nconvert") = "$nconvert"
+	set $$$MappedValue("COS", $$$COSFunction, "$normalize") = "$normalize"
+	set $$$MappedValue("COS", $$$COSFunction, "$now") = "$now"
+	set $$$MappedValue("COS", $$$COSFunction, "$number") = "$num"
+	set $$$MappedValue("COS", $$$COSFunction, "$number") = "$number"
+	set $$$MappedValue("COS", $$$COSFunction, "$o") = "$order"
+	set $$$MappedValue("COS", $$$COSFunction, "$order") = "$order"
+	set $$$MappedValue("COS", $$$COSFunction, "$parameter") = "$parameter"
+	set $$$MappedValue("COS", $$$COSFunction, "$p") = "$piece"
+	set $$$MappedValue("COS", $$$COSFunction, "$piece") = "$piece"
+	set $$$MappedValue("COS", $$$COSFunction, "$property") = "$property"
+	set $$$MappedValue("COS", $$$COSFunction, "$q") = "$query"
+	set $$$MappedValue("COS", $$$COSFunction, "$ql") = "$qlength"
+	set $$$MappedValue("COS", $$$COSFunction, "$qlength") = "$qlength"
+	set $$$MappedValue("COS", $$$COSFunction, "$qs") = "$qsubscript"
+	set $$$MappedValue("COS", $$$COSFunction, "$qsubscript") = "$qsubscript"
+	set $$$MappedValue("COS", $$$COSFunction, "$query") = "$query"
+	set $$$MappedValue("COS", $$$COSFunction, "$r") = "$random"
+	set $$$MappedValue("COS", $$$COSFunction, "$random") = "$random"
+	set $$$MappedValue("COS", $$$COSFunction, "$re") = "$reverse"
+	set $$$MappedValue("COS", $$$COSFunction, "$replace") = "$replace"
+	set $$$MappedValue("COS", $$$COSFunction, "$reverse") = "$reverse"
+	set $$$MappedValue("COS", $$$COSFunction, "$sconvert") = "$sconvert"
+	set $$$MappedValue("COS", $$$COSFunction, "$s") = "$select"
+	set $$$MappedValue("COS", $$$COSFunction, "$select") = "$select"
+	set $$$MappedValue("COS", $$$COSFunction, "$sortbegin") = "$sortbegin"
+	set $$$MappedValue("COS", $$$COSFunction, "$sortend") = "$sortend"
+	set $$$MappedValue("COS", $$$COSFunction, "$stack") = "$stack"
+	set $$$MappedValue("COS", $$$COSFunction, "$t") = "$text"
+	set $$$MappedValue("COS", $$$COSFunction, "$text") = "$text"
+	set $$$MappedValue("COS", $$$COSFunction, "$tr") = "$translate"
+	set $$$MappedValue("COS", $$$COSFunction, "$translate") = "$translate"
+	set $$$MappedValue("COS", $$$COSFunction, "$xecute") = "$xecute"
+	set $$$MappedValue("COS", $$$COSFunction, "$zabs") = "$zabs"
+	set $$$MappedValue("COS", $$$COSFunction, "$zb") = "$zboolean"
+	set $$$MappedValue("COS", $$$COSFunction, "$zbitget") = "$zbitget"
+	set $$$MappedValue("COS", $$$COSFunction, "$zbitlen") = "$zbitlen"
+	set $$$MappedValue("COS", $$$COSFunction, "$zbitor") = "$zbitor"
+	set $$$MappedValue("COS", $$$COSFunction, "$zbitset") = "$zbitset"
+	set $$$MappedValue("COS", $$$COSFunction, "$zbitstr") = "$zbitstr"
+	set $$$MappedValue("COS", $$$COSFunction, "$zboolean") = "$zboolean"
+	set $$$MappedValue("COS", $$$COSFunction, "$zconvert") = "$zconvert"
+	set $$$MappedValue("COS", $$$COSFunction, "$zcrc") = "$zcrc"
+	set $$$MappedValue("COS", $$$COSFunction, "$zcvt") = "$zconvert"
+	set $$$MappedValue("COS", $$$COSFunction, "$zconvert") = "$zconvert"
+	set $$$MappedValue("COS", $$$COSFunction, "$zd") = "$zdate"
+	set $$$MappedValue("COS", $$$COSFunction, "$zdate") = "$zdate"
+	set $$$MappedValue("COS", $$$COSFunction, "$zdateh") = "$zdateh"
+	set $$$MappedValue("COS", $$$COSFunction, "$zdatetime") = "$zdatetime"
+	set $$$MappedValue("COS", $$$COSFunction, "$zdatetimeh") = "$zdatetimeh"
+	set $$$MappedValue("COS", $$$COSFunction, "$zdh") = "$zdateh"
+	set $$$MappedValue("COS", $$$COSFunction, "$zdt") = "$zdatetime"
+	set $$$MappedValue("COS", $$$COSFunction, "$zdth") = "$zdatetimeh"
+	set $$$MappedValue("COS", $$$COSFunction, "$zf") = "$zf"
+	set $$$MappedValue("COS", $$$COSFunction, "$zh") = "$zhex"
+	set $$$MappedValue("COS", $$$COSFunction, "$zhex") = "$zhex"
+	set $$$MappedValue("COS", $$$COSFunction, "$ziswide") = "$ziswide"
+	set $$$MappedValue("COS", $$$COSFunction, "$zlascii") = "$zlascii"
+	set $$$MappedValue("COS", $$$COSFunction, "$zlc") = "$zlc"
+	set $$$MappedValue("COS", $$$COSFunction, "$zlchar") = "$zlchar"
+	set $$$MappedValue("COS", $$$COSFunction, "$zlog") = "$zlog"
+	set $$$MappedValue("COS", $$$COSFunction, "$zname") = "$zname"
+	set $$$MappedValue("COS", $$$COSFunction, "$zo") = "$zorder"
+	set $$$MappedValue("COS", $$$COSFunction, "$zobjclass") = "$zobjclass"
+	set $$$MappedValue("COS", $$$COSFunction, "$zobjclassmethod") = "$zobjclassmethod"
+	set $$$MappedValue("COS", $$$COSFunction, "$zobjexport") = "$zobjexport"
+	set $$$MappedValue("COS", $$$COSFunction, "$zobjmethod") = "$zobjmethod"
+	set $$$MappedValue("COS", $$$COSFunction, "$zobjproperty") = "$zobjproperty"
+	set $$$MappedValue("COS", $$$COSFunction, "$zobjval") = "$zobjval"
+	set $$$MappedValue("COS", $$$COSFunction, "$zpower") = "$zpower"
+	set $$$MappedValue("COS", $$$COSFunction, "$zse") = "$zsearch"
+	set $$$MappedValue("COS", $$$COSFunction, "$zsearch") = "$zsearch"
+	set $$$MappedValue("COS", $$$COSFunction, "$zstrip") = "$zstrip"
+	set $$$MappedValue("COS", $$$COSFunction, "$zt") = "$ztime"
+	set $$$MappedValue("COS", $$$COSFunction, "$zth") = "$ztimeh"
+	set $$$MappedValue("COS", $$$COSFunction, "$ztime") = "$ztime"
+	set $$$MappedValue("COS", $$$COSFunction, "$ztimeh") = "$ztimeh"
+	set $$$MappedValue("COS", $$$COSFunction, "$zu") = "$zutil"
+	set $$$MappedValue("COS", $$$COSFunction, "$zutil") = "$zutil"
+	set $$$MappedValue("COS", $$$COSFunction, "$zv") = "$zversion"
+	set $$$MappedValue("COS", $$$COSFunction, "$zversion") = "$zversion"
+	set $$$MappedValue("COS", $$$COSFunction, "$zwascii") = "$zwascii"
+	set $$$MappedValue("COS", $$$COSFunction, "$zwc") = "$zwchar"
+	set $$$MappedValue("COS", $$$COSFunction, "$zwchar") = "$zwchar"
+	
+	set $$$MappedValue("COS", $$$COSCommand, "as") = "as"
+	set $$$MappedValue("COS", $$$COSCommand, "b") = "break"
+	set $$$MappedValue("COS", $$$COSCommand, "break") = "break"
+	set $$$MappedValue("COS", $$$COSCommand, "catch") = "catch"
+	set $$$MappedValue("COS", $$$COSCommand, "c") = "close"
+	set $$$MappedValue("COS", $$$COSCommand, "close") = "close"
+	set $$$MappedValue("COS", $$$COSCommand, "continue") = "continue"
+	set $$$MappedValue("COS", $$$COSCommand, "d") = "do"
+	set $$$MappedValue("COS", $$$COSCommand, "do") = "do"
+	set $$$MappedValue("COS", $$$COSCommand, "e") = "else"
+	set $$$MappedValue("COS", $$$COSCommand, "else") = "else"
+	set $$$MappedValue("COS", $$$COSCommand, "elseif") = "elseif"
+	set $$$MappedValue("COS", $$$COSCommand, "f") = "for"
+	set $$$MappedValue("COS", $$$COSCommand, "for") = "for"
+	set $$$MappedValue("COS", $$$COSCommand, "g") = "goto"
+	set $$$MappedValue("COS", $$$COSCommand, "goto") = "goto"
+	// leave H as is (due to HANG x   versus HALT)
+	set $$$MappedValue("COS", $$$COSCommand, "h") = "h"
+	set $$$MappedValue("COS", $$$COSCommand, "hang") = "hang"
+	set $$$MappedValue("COS", $$$COSCommand, "i") = "if"
+	set $$$MappedValue("COS", $$$COSCommand, "if") = "if"
+	set $$$MappedValue("COS", $$$COSCommand, "j") = "job"
+	set $$$MappedValue("COS", $$$COSCommand, "job") = "job"
+	set $$$MappedValue("COS", $$$COSCommand, "k") = "kill"
+	set $$$MappedValue("COS", $$$COSCommand, "kill") = "kill"
+	set $$$MappedValue("COS", $$$COSCommand, "l") = "lock"
+	set $$$MappedValue("COS", $$$COSCommand, "lock") = "lock"
+	set $$$MappedValue("COS", $$$COSCommand, "m") = "merge"
+	set $$$MappedValue("COS", $$$COSCommand, "merge") = "merge"
+	set $$$MappedValue("COS", $$$COSCommand, "n") = "new"
+	set $$$MappedValue("COS", $$$COSCommand, "new") = "new"
+	set $$$MappedValue("COS", $$$COSCommand, "o") = "open"
+	set $$$MappedValue("COS", $$$COSCommand, "open") = "open"
+	set $$$MappedValue("COS", $$$COSCommand, "p") = "print"
+	set $$$MappedValue("COS", $$$COSCommand, "print") = "print"
+	set $$$MappedValue("COS", $$$COSCommand, "q") = "quit"
+	set $$$MappedValue("COS", $$$COSCommand, "quit") = "quit"
+	set $$$MappedValue("COS", $$$COSCommand, "r") = "read"
+	set $$$MappedValue("COS", $$$COSCommand, "read") = "read"
+	set $$$MappedValue("COS", $$$COSCommand, "ret") = "ret"
+	set $$$MappedValue("COS", $$$COSCommand, "return") = "return"
+	set $$$MappedValue("COS", $$$COSCommand, "s") = "set"
+	set $$$MappedValue("COS", $$$COSCommand, "set") = "set"
+	set $$$MappedValue("COS", $$$COSCommand, "tc") = "tcommit"
+	set $$$MappedValue("COS", $$$COSCommand, "tcommit") = "tcommit"
+	set $$$MappedValue("COS", $$$COSCommand, "throw") = "throw"
+	set $$$MappedValue("COS", $$$COSCommand, "trollback") = "trollback"
+	set $$$MappedValue("COS", $$$COSCommand, "try") = "try"
+	set $$$MappedValue("COS", $$$COSCommand, "ts") = "tstart"
+	set $$$MappedValue("COS", $$$COSCommand, "tstart") = "tstart"
+	set $$$MappedValue("COS", $$$COSCommand, "u") = "use"
+	set $$$MappedValue("COS", $$$COSCommand, "use") = "use"
+	set $$$MappedValue("COS", $$$COSCommand, "v") = "view"
+	set $$$MappedValue("COS", $$$COSCommand, "view") = "view"
+	set $$$MappedValue("COS", $$$COSCommand, "while") = "while"
+	set $$$MappedValue("COS", $$$COSCommand, "w") = "write"
+	set $$$MappedValue("COS", $$$COSCommand, "write") = "write"
+	set $$$MappedValue("COS", $$$COSCommand, "x") = "xecute"
+	set $$$MappedValue("COS", $$$COSCommand, "xecute") = "xecute"
+	set $$$MappedValue("COS", $$$COSCommand, "za") = "zallocate"
+	set $$$MappedValue("COS", $$$COSCommand, "zbreak") = "zbreak"
+	set $$$MappedValue("COS", $$$COSCommand, "zd") = "zdeallocate"
+	set $$$MappedValue("COS", $$$COSCommand, "zkill") = "zkill"
+	set $$$MappedValue("COS", $$$COSCommand, "zn") = "znspace"
+	set $$$MappedValue("COS", $$$COSCommand, "znspace") = "znspace"
+	set $$$MappedValue("COS", $$$COSCommand, "zt") = "ztrap"
+	set $$$MappedValue("COS", $$$COSCommand, "ztrap") = "ztrap"
+	set $$$MappedValue("COS", $$$COSCommand, "zw") = "zwrite"
+	set $$$MappedValue("COS", $$$COSCommand, "zwrite") = "zwrite"
+	
+	set $$$MappedValue("COS", $$$COSSystemvariable, "$j") = "$job"
+	set $$$MappedValue("COS", $$$COSSystemvariable, "$job") = "$job"
+	set $$$MappedValue("COS", $$$COSSystemvariable, "$ec") = "$ec"
+	set $$$MappedValue("COS", $$$COSSystemvariable, "$ecode") = "$ecode"
+	
+	// leave as $h...
+	set $$$MappedValue("COS", $$$COSSystemvariable, "$h") = "$h"
+	set $$$MappedValue("COS", $$$COSSystemvariable, "$horolog") = "$h"
+	
+	set $$$MappedValue("COS", $$$COSSystemvariable, "$i") = "$io"
+	set $$$MappedValue("COS", $$$COSSystemvariable, "$io") = "$io"
+	set $$$MappedValue("COS", $$$COSSystemvariable, "$j") = "$job"
+	set $$$MappedValue("COS", $$$COSSystemvariable, "$job") = "$job"
+	set $$$MappedValue("COS", $$$COSSystemvariable, "$k") = "$key"
+	set $$$MappedValue("COS", $$$COSSystemvariable, "$key") = "$key"
+	set $$$MappedValue("COS", $$$COSSystemvariable, "$ns") = "$namespace"
+	set $$$MappedValue("COS", $$$COSSystemvariable, "$namespace") = "$namespace"
+	set $$$MappedValue("COS", $$$COSSystemvariable, "$principal") = "$principal"
+	set $$$MappedValue("COS", $$$COSSystemvariable, "$roles") = "$roles"
+	set $$$MappedValue("COS", $$$COSSystemvariable, "$s") = "$storage"
+	set $$$MappedValue("COS", $$$COSSystemvariable, "$storage") = "$storage"
+	set $$$MappedValue("COS", $$$COSSystemvariable, "$stack") = "$stack"
+	set $$$MappedValue("COS", $$$COSSystemvariable, "$system") = "$system"
+	set $$$MappedValue("COS", $$$COSSystemvariable, "$t") = "$test"
+	set $$$MappedValue("COS", $$$COSSystemvariable, "$test") = "$test"
+	set $$$MappedValue("COS", $$$COSSystemvariable, "$this") = "$this"
+	set $$$MappedValue("COS", $$$COSSystemvariable, "$tl") = "$tlevel"
+	set $$$MappedValue("COS", $$$COSSystemvariable, "$tlevel") = "$tlevel"
+	set $$$MappedValue("COS", $$$COSSystemvariable, "$username") = "$username"
+	set $$$MappedValue("COS", $$$COSSystemvariable, "$x") = "$x"
+	set $$$MappedValue("COS", $$$COSSystemvariable, "$zb") = "$zb"
+	set $$$MappedValue("COS", $$$COSSystemvariable, "$zc") = "$zc"
+	set $$$MappedValue("COS", $$$COSSystemvariable, "$zchild") = "$zchild"
+	set $$$MappedValue("COS", $$$COSSystemvariable, "$ze") = "$zerror"
+	set $$$MappedValue("COS", $$$COSSystemvariable, "$zeof") = "$zeof"
+	set $$$MappedValue("COS", $$$COSSystemvariable, "$zerror") = "$zerror"
+	set $$$MappedValue("COS", $$$COSSystemvariable, "$zh") = "$zhorolog"
+	set $$$MappedValue("COS", $$$COSSystemvariable, "$zhorolog") = "$zhorolog"
+	set $$$MappedValue("COS", $$$COSSystemvariable, "$zj") = "$zjob"
+	set $$$MappedValue("COS", $$$COSSystemvariable, "$zjob") = "$zjob"
+	set $$$MappedValue("COS", $$$COSSystemvariable, "$zn") = "$zname"
+	set $$$MappedValue("COS", $$$COSSystemvariable, "$zname") = "$zname"
+	set $$$MappedValue("COS", $$$COSSystemvariable, "$znspace") = "$znspace"
+	set $$$MappedValue("COS", $$$COSSystemvariable, "$zparent") = "$zparent"
+	set $$$MappedValue("COS", $$$COSSystemvariable, "$zpi") = "$zpi"
+	set $$$MappedValue("COS", $$$COSSystemvariable, "$zr") = "$zreference"
+	set $$$MappedValue("COS", $$$COSSystemvariable, "$zr") = "$zreference"
+	set $$$MappedValue("COS", $$$COSSystemvariable, "$zs") = "$zstorage"
+	set $$$MappedValue("COS", $$$COSSystemvariable, "$zs") = "$zstorage"
+	set $$$MappedValue("COS", $$$COSSystemvariable, "$zt") = "$ztrap"
+	set $$$MappedValue("COS", $$$COSSystemvariable, "$zts") = "$ztimestamp"
+	set $$$MappedValue("COS", $$$COSSystemvariable, "$ztimestamp") = "$ztimestamp"
+	set $$$MappedValue("COS", $$$COSSystemvariable, "$ztz") = "$ztimezone"
+	set $$$MappedValue("COS", $$$COSSystemvariable, "$ztimezone") = "$ztimezone"
+	set $$$MappedValue("COS", $$$COSSystemvariable, "$ztrap") = "$ztrap"
+	set $$$MappedValue("COS", $$$COSSystemvariable, "$zv") = "$zversion"
+	set $$$MappedValue("COS", $$$COSSystemvariable, "$zversion") = "$zversion"
+}
+
+}
+
