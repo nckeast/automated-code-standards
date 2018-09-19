@@ -6,7 +6,7 @@ Parameter SrcVer = "$Id$";
 
 ClassMethod One() As %Status
 {
- if ##class(User.LBCF).LBCFConfidentialPrintingSiteGetStored(1) = "R" {  // Confidential courier site from Episode
+	 if ##class(User.LBCF).LBCFConfidentialPrintingSiteGetStored(1) = "R" {  // Confidential courier site from Episode
  	set siteid = lbep.LBEPLabSiteDRGetObjectId(), reason = reason _ " EPSite=" _ lbep.LBEPLabSiteDR.CTLOCCode }
 }
 
@@ -285,23 +285,23 @@ ClassMethod Seventeen()
 }
 
 /*
-											/// Eighteen
-											/// This cannot be tested from within a class.  It needs to be in a JavaScript file.
-											/// The braces in the regular expression should not affect the parsing.
-											function getFunction(func)
-											{
-												var f = func.toString();
-												var a = f.match(/^function\W*(.*[(](.*)[)])/i);
-												
-												//if function doesn't have name.
-												if (a[1].match(/^[(].*[)]$/))
-												{
-													a[1] = f.match(/^function[^{]*[{]((?:.|\s)*)[}]\s*$/i)[1];
-												}
-												
-												return a;
-											}
-											*/
+/// Eighteen
+/// This cannot be tested from within a class.  It needs to be in a JavaScript file.
+/// The braces in the regular expression should not affect the parsing.
+function getFunction(func)
+{
+	var f = func.toString();
+	var a = f.match(/^function\W*(.*[(](.*)[)])/i);
+	
+	//if function doesn't have name.
+	if (a[1].match(/^[(].*[)]$/))
+	{
+		a[1] = f.match(/^function[^{]*[{]((?:.|\s)*)[}]\s*$/i)[1];
+	}
+	
+	return a;
+}
+*/
 ClientMethod Nineteen() [ Language = javascript ]
 {
  console.debug(type)
@@ -390,31 +390,31 @@ Trigger Eight
  #define className ##expression(""""_%classname_"""")
  #define storageName $$$defClassKeyGet(%classname, $$$cCLASSstoragestrategy)
  #if $$$comMemberKeyGet(%classname, $$$cCLASSparameter, "GUIDENABLED", $$$cPARAMdefault)
- try {
- 	#if $length($$$defClassKeyGet(%classname, $$$cCLASSstoragestrategy))
- 	#if $length($$$defMemberKeyGet(%classname, $$$cCLASSstorage, $$$storageName, $$$cSDEFidlocation))
- 	#define idLocation ##expression($$$defMemberKeyGet(%classname, $$$cCLASSstorage, $$$storageName, $$$cSDEFidlocation))
- 	if $get(%xmlconfigitem) {
- 		// Child object.
- 		// Ensure that any child id counter is equal or greater than this object id.
- 		if $order($$$idLocation) = "" {
- 			kill $$$idLocation
+ 	try {
+ 		#if $length($$$defClassKeyGet(%classname, $$$cCLASSstoragestrategy))
+ 			#if $length($$$defMemberKeyGet(%classname, $$$cCLASSstorage, $$$storageName, $$$cSDEFidlocation))
+ 				#define idLocation ##expression($$$defMemberKeyGet(%classname, $$$cCLASSstorage, $$$storageName, $$$cSDEFidlocation))
+ 				if $get(%xmlconfigitem) {
+ 					// Child object.
+ 					// Ensure that any child id counter is equal or greater than this object id.
+ 					if $order($$$idLocation) = "" {
+ 						kill $$$idLocation
+ 					}
+ 				}
+ 			#endif
+ 		#endif
+ 		if '$data(%ChangeControl) do ##class(TC.ChangeControl.Interface).ChangeControlCreate($select($isobject($get(%session)):$get(%session.Data("LOGON.USERID")), 1:""))
+ 		if $isobject($get(%ChangeControl)) {
+ 			new oid, sc
+ 			// %d(1) used to access row id.
+ 			// The column name will vary between tables.
+ 			set oid = $$$oidCompose(%d(1), $$$className)
+ 			set sc = %ChangeControl.%AfterDeleteTrigger(oid)
+ 			if $$$ISERR(sc) set %ok = 0, %msg = $system.Status.GetErrorText(sc)
  		}
+ 	} catch {
+ 		do BACK^%ETN
  	}
- 	#endif
- 	#endif
- 	if '$data(%ChangeControl) do ##class(TC.ChangeControl.Interface).ChangeControlCreate($select($isobject($get(%session)):$get(%session.Data("LOGON.USERID")), 1:""))
- 	if $isobject($get(%ChangeControl)) {
- 		new oid, sc
- 		// %d(1) used to access row id.
- 		// The column name will vary between tables.
- 		set oid = $$$oidCompose(%d(1), $$$className)
- 		set sc = %ChangeControl.%AfterDeleteTrigger(oid)
- 		if $$$ISERR(sc) set %ok = 0, %msg = $system.Status.GetErrorText(sc)
- 	}
- } catch {
-	 	do BACK^%ETN
- }
  #endif
  
  quit

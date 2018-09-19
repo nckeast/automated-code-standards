@@ -22,8 +22,8 @@ Property History As list Of LotteryActivity;
 /// Change the password for this user.
 Method changePassword(pass As %String) As %Integer
 {
- set ..Password = pass 
-	quit
+											 set ..Password = pass 
+ quit
 }
 
 /// Test if <var>pass</var> is correct password for this user.
@@ -36,16 +36,16 @@ Method testPassword(pass As %String) As %Boolean
 ClassMethod addNewUser(UserName As %String, FirstName As %String, LastName As %String, pass As %String) As %Integer
 {
  set user = ##class(LotteryUser).%New()
-	set user.UserName = UserName
-	set user.FirstName = FirstName
-	set user.LastName = LastName
-	do user.changePassword(pass)
+ set user.UserName = UserName
+ set user.FirstName = FirstName
+ set user.LastName = LastName
+ do user.changePassword(pass)
 
-	set sc = user.%Save()
+ set sc = user.%Save()
 
-	if ($$$ISERR(sc)) &javascript<alert('Unable to create user.');> quit 0
+ if ($$$ISERR(sc)) &javascript<alert('Unable to create user.');> quit 0
 
-	quit 1
+ quit 1
 }
 
 /// Find the ID of the user with the specified user name.
@@ -53,46 +53,46 @@ ClassMethod findUser(UserName As %String) As %String
 {
  set id = ""
 
-	// use embedded SQL to search for user
-	&SQL(SELECT ID INTO :id FROM LotteryUser WHERE (UserName = :UserName))
+ // use embedded SQL to search for user
+ &SQL(SELECT ID INTO :id FROM LotteryUser WHERE (UserName = :UserName))
 
-	quit id
+ quit id
 }
 
 /// Test if the name/password specifies a valid user. If so, return the user's ID.
 ClassMethod authenticate(UserName As %String, Password As %String) As %String
 {
  set id = ..findUser(UserName)
-	if (id '= "") do
-	. set user = ..%OpenId(id)
-	. if ' user.testPassword(Password) set id = ""
+ if (id '= "") do
+ . set user = ..%OpenId(id)
+ . if ' user.testPassword(Password) set id = ""
 
-	quit id
+ quit id
 }
 
 /// Called by CSP page to add a new purchase. Returns amount of purchase.
 ClassMethod addPurchase(id As %String, type As %String) As %Float
 {
  set price = 0
-	if (type = "STANDARD") set price = 10
-	else  if (type = "DELUXE") set price = 50
+ if (type = "STANDARD") set price = 10
+ else  if (type = "DELUXE") set price = 50
 
-	if (price = 0) quit 0
+ if (price = 0) quit 0
 
-	set user = ##class(LotteryUser).%OpenId(id)
-	if user = "" quit 0
+ set user = ##class(LotteryUser).%OpenId(id)
+ if user = "" quit 0
 
-	set action = ##class(LotteryActivity).%New()
-	set action.TheUser = user
-	set action.ActivityType = "PURCHASE"
-	set action.Amount = price
-	set action.Product = type
+ set action = ##class(LotteryActivity).%New()
+ set action.TheUser = user
+ set action.ActivityType = "PURCHASE"
+ set action.Amount = price
+ set action.Product = type
 
-	do user.History.Insert(action)
+ do user.History.Insert(action)
 
-	set sc = user.%Save()
+ set sc = user.%Save()
 
-	quit price
+ quit price
 }
 
 Storage Default
