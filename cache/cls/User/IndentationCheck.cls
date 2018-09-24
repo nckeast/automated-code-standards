@@ -6,8 +6,10 @@ Parameter SrcVer = "$Id$";
 
 ClassMethod One() As %Status
 {
-	 if ##class(User.LBCF).LBCFConfidentialPrintingSiteGetStored(1) = "R" {  // Confidential courier site from Episode
- 	set siteid = lbep.LBEPLabSiteDRGetObjectId(), reason = reason _ " EPSite=" _ lbep.LBEPLabSiteDR.CTLOCCode }
+ if ##class(User.LBCF).LBCFConfidentialPrintingSiteGetStored(1) = "R" {  
+ 	// Confidential courier site from Episode
+ 	set siteid = lbep.LBEPLabSiteDRGetObjectId(), reason = reason _ " EPSite=" _ lbep.LBEPLabSiteDR.CTLOCCode 
+ }
 }
 
 ClassMethod Two()
@@ -23,16 +25,22 @@ ClassMethod Two()
 
 ClassMethod Three()
 {
- set dr = "" for {
+ set dr = "" 
+ for {
  	set dr = $order(^CTPCP(dr), -1) quit:dr=""
- 	if $order(^CTPCP(dr, "")) = "KEYW" && ($order(^CTPCP(dr, "KEYW")) = "") {kill ^CTPCP(dr)}
- 	else {quit}}
+ 	if $order(^CTPCP(dr, "")) = "KEYW" && ($order(^CTPCP(dr, "KEYW")) = "") {kill ^CTPCP(dr)
+ 	} else {
+ 		quit
+ 	}
+ }
  for {
  	set a = $order(^User.LBCTestItemD(a)) quit:a=""
  	for {
  		set a2=$order(^User.LBCTestItemD(a, "Ranges", a2)) quit:a2=""
  		set b=$order(^User.LBCTestItemD(a, "Ranges", a2, "Machine", ""), -1)
- 		if b > m set m = b}}
+ 		if b > m set m = b
+ 	}
+ }
 }
 
 ClassMethod Four()
