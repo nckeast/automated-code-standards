@@ -37,6 +37,10 @@ Parameter COSWHITESPACE = 1;
 /// keywords and operators.
 Parameter SQLCASE = "U";
 
+/// Open Whitespace Character
+/// Used as first character for lines beginning with white space.
+Parameter OPENWHITESPACE = "	";
+
 /// When enabled the system will debug output to current device during execution.
 Parameter DEBUG = 0;
 
@@ -59,19 +63,19 @@ ClassMethod ParseDocument(InternalName As %String, Object As %RegisteredObject) 
 	set name = $piece(InternalName, ".", 1, $length(InternalName, ".") - 1) 
 	
 	if type = "class" {
-	 quit ..ParseClass(name, 1) 
+		quit ..ParseClass(name, 1) 
 	}
 	
 	if type = "routine" {
-	 quit ..ParseRoutine(name, 1) 
+		quit ..ParseRoutine(name, 1) 
 	}
 	
 	if type = "csp" {
-	 quit ..ParseCSP(InternalName, 1) 
+		quit ..ParseCSP(InternalName, 1) 
 	}	
 	
 	if type = "html" {
-	 quit ..ParseHTML(InternalName, 1) 
+		quit ..ParseHTML(InternalName, 1) 
 	}	
 	
 	quit status
@@ -82,19 +86,19 @@ ClassMethod GetDocumentType(InternalName As %String) As %String
 {
 	set extension = $zconvert($piece(InternalName, ".", * ) , "U") 
 	quit $case(extension, 
-	 "CLS":"class", 
-	 "CSP":"csp", 
-	 "CSR":"csp", 
-	 "PRJ":"project", 
-	 "INC":"routine", 
-	 "INT":"routine", 
-	 "MAC":"routine", 
-	 "BAS":"routine", 
-	 "JS":"javascript", 
-	 "CSS":"javascript", 
-	 "HTML":"html", 
-	 "HTM":"html", 
-	 :"other")
+		"CLS":"class", 
+		"CSP":"csp", 
+		"CSR":"csp", 
+		"PRJ":"project", 
+		"INC":"routine", 
+		"INT":"routine", 
+		"MAC":"routine", 
+		"BAS":"routine", 
+		"JS":"javascript", 
+		"CSS":"javascript", 
+		"HTML":"html", 
+		"HTM":"html", 
+		:"other")
 }
 
 /// Process all code for a class
@@ -104,62 +108,62 @@ ClassMethod ParseClass(ClassName As %String, SaveChanges = 0) As %Status
 	if $$$ISERR(status) quit status
 	
 	for j = 1:1:classDefinition.Methods.Count() {
-	 set methodDefinition = classDefinition.Methods.GetAt(j) 
-	 
-	 if methodDefinition.CodeMode = "expression" continue
-	 if methodDefinition.ClientMethod {
-	  do ..ParseStream(methodDefinition.Implementation, methodDefinition.Language, "Method:" _ ClassName _ ":" _ methodDefinition.Name) 
-	 } else {
-	  do ..ParseStream(methodDefinition.Implementation, , "Method:" _ ClassName _ ":" _ methodDefinition.Name) 
-	 }
+		set methodDefinition = classDefinition.Methods.GetAt(j) 
+		
+		if methodDefinition.CodeMode = "expression" continue
+		if methodDefinition.ClientMethod {
+			do ..ParseStream(methodDefinition.Implementation, methodDefinition.Language, "Method:" _ ClassName _ ":" _ methodDefinition.Name) 
+		} else {
+			do ..ParseStream(methodDefinition.Implementation, , "Method:" _ ClassName _ ":" _ methodDefinition.Name) 
+		}
 	}
 	for j = 1:1:classDefinition.Queries.Count() {
-	 set queryDefinition = classDefinition.Queries.GetAt(j) 
-	 
-	 // copy to a stream
-	 set queryStream = ##class(%Stream.TmpCharacter).%New() 
-	 do queryStream.Rewind() 
-	 
-	 set lineCount = $length(queryDefinition.SqlQuery, $char(13, 10) ) 
-	 for lineNumber = 1:1:lineCount {
-	  do queryStream.WriteLine($piece(queryDefinition.SqlQuery, $char(13, 10) , lineNumber) ) 
-	 }
-	 // process the stream
-	 do ..ParseStream(queryStream, "SQL", "Query:" _ ClassName _ ":" _ queryDefinition.Name) 
-	 // and copy from stream back to string
-	 do queryStream.Rewind() 
-	 set queryString = ""
-	 while 'queryStream.AtEnd {
-	  set line = queryStream.ReadLine() 
-	  set queryString = queryString _ $select(queryString '= "":$char(13, 10) , 1:"") _ line
-	 }
-	 set queryDefinition.SqlQuery = queryString
+		set queryDefinition = classDefinition.Queries.GetAt(j) 
+		
+		// copy to a stream
+		set queryStream = ##class(%Stream.TmpCharacter).%New() 
+		do queryStream.Rewind() 
+		
+		set lineCount = $length(queryDefinition.SqlQuery, $char(13, 10) ) 
+		for lineNumber = 1:1:lineCount {
+			do queryStream.WriteLine($piece(queryDefinition.SqlQuery, $char(13, 10) , lineNumber) ) 
+		}
+		// process the stream
+		do ..ParseStream(queryStream, "SQL", "Query:" _ ClassName _ ":" _ queryDefinition.Name) 
+		// and copy from stream back to string
+		do queryStream.Rewind() 
+		set queryString = ""
+		while 'queryStream.AtEnd {
+			set line = queryStream.ReadLine() 
+			set queryString = queryString _ $select(queryString '= "":$char(13, 10) , 1:"") _ line
+		}
+		set queryDefinition.SqlQuery = queryString
 	}
 	for j = 1:1:classDefinition.Triggers.Count() {
-	 set triggerDefinition = classDefinition.Triggers.GetAt(j) 
-	 
-	 // Copy to a stream
-	 set triggerStream = ##class(%Stream.TmpCharacter).%New() 
-	 do triggerStream.Rewind() 
-	 
-	 set lineCount = $length(triggerDefinition.Code, $char(13, 10)) 
-	 for lineNumber = 1:1:lineCount {
-	  do triggerStream.WriteLine($piece(triggerDefinition.Code, $char(13, 10) , lineNumber) ) 
-	 }
-	 // Process the stream
-	 do ..ParseStream(triggerStream, triggerDefinition.Language, "Trigger:" _ ClassName _ ":" _ triggerDefinition.Name) 
-	 // and copy from stream back to string
-	 do triggerStream.Rewind() 
-	 set triggerString = ""
-	 while 'triggerStream.AtEnd {
-	  set line = triggerStream.ReadLine() 
-	  set triggerString = triggerString _ $select(triggerString '= "":$char(13, 10) , 1:"") _ line
-	 }
-	 set triggerDefinition.Code = triggerString
+		set triggerDefinition = classDefinition.Triggers.GetAt(j) 
+		
+		// Copy to a stream
+		set triggerStream = ##class(%Stream.TmpCharacter).%New() 
+		do triggerStream.Rewind() 
+		
+		set lineCount = $length(triggerDefinition.Code, $char(13, 10)) 
+		for lineNumber = 1:1:lineCount {
+			do triggerStream.WriteLine($piece(triggerDefinition.Code, $char(13, 10) , lineNumber) ) 
+		}
+		// Process the stream
+		do ..ParseStream(triggerStream, triggerDefinition.Language, "Trigger:" _ ClassName _ ":" _ triggerDefinition.Name) 
+		// and copy from stream back to string
+		do triggerStream.Rewind() 
+		set triggerString = ""
+		while 'triggerStream.AtEnd {
+			set line = triggerStream.ReadLine() 
+			set triggerString = triggerString _ $select(triggerString '= "":$char(13, 10) , 1:"") _ line
+		}
+		set triggerDefinition.Code = triggerString
 	}
 	if SaveChanges {
-	 set status = classDefinition.%Save() 
-	 quit status
+		set status = classDefinition.%Save()
+		quit status
 	}
 	quit $$$OK
 }
@@ -171,8 +175,8 @@ ClassMethod ParseRoutine(RoutineName As %String, SaveChanges = 0) As %Status
 	do ..ParseStream(routine, , "Routine:" _ RoutineName) 
 	
 	if SaveChanges {
-	 set status = routine.%Save() 
-	 quit status
+		set status = routine.%Save() 
+		quit status
 	}
 	quit $$$OK
 }
@@ -196,10 +200,10 @@ ClassMethod ParseCSP(CSPName As %String, SaveChanges = 0) As %Status
 	do ..ParseStream(streamout, "CSP", "CSP:" _ CSPName) 
 	
 	if SaveChanges {
-	 // write stream back to file
-	 do streamout.Rewind() 
-	 set status = streamout.%Save() 
-	 if $$$ISERR(status) do $system.OBJ.DisplayError(status) quit status
+		// write stream back to file
+		do streamout.Rewind() 
+		set status = streamout.%Save() 
+		if $$$ISERR(status) do $system.OBJ.DisplayError(status) quit status
 	}
 	
 	quit $$$OK
@@ -223,22 +227,22 @@ ClassMethod ParseHTML(CSPName As %String, SaveChanges = 0) As %Status
 	set cmd = $$$FormatHTML(cspFilename, outputFilename)
 	set exitStatus = $zf(-1, cmd)
 	if exitStatus < 1  {
-	 // Show details in output window.
-	 set logStream = ##class(%Stream.FileCharacter).%New() 
-	 set logStream.Filename = cspFilename
-	 do logFilename.OutputToDevice()
-	 kill logFilename
-	 quit $$$ERROR($$$UnableToExecuteZF, -100, cmd)
+		// Show details in output window.
+		set logStream = ##class(%Stream.FileCharacter).%New() 
+		set logStream.Filename = cspFilename
+		do logFilename.OutputToDevice()
+		kill logFilename
+		quit $$$ERROR($$$UnableToExecuteZF, -100, cmd)
 	}	
 	
 	if SaveChanges {
-	 set success = ##class(%File).CopyFile(outputFilename, cspFilename, , .message) 
-	 if 'success {
-	  write !, logFilename
-	  write !, outputFilename
-	  write !, message
-	  quit $$$ERROR($$$FileCanNotCopy, outputFilename, cspFilename)
-	 }
+		set success = ##class(%File).CopyFile(outputFilename, cspFilename, , .message) 
+		if 'success {
+			write !, logFilename
+			write !, outputFilename
+			write !, message
+			quit $$$ERROR($$$FileCanNotCopy, outputFilename, cspFilename)
+		}
 	}
 	
 	set status = ##class(%File).Delete(outputFilename)
@@ -248,7 +252,6 @@ ClassMethod ParseHTML(CSPName As %String, SaveChanges = 0) As %Status
 /// Process a stream
 ClassMethod ParseStream(ByRef CodeStream, Language = "COS", Info)
 {
-	#define OPENWHITESPACE $char(9)
 	if Language = "" set Language = "COS"
 	
 	set syntaxStream = ##class(%Stream.TmpCharacter).%New() 
@@ -258,349 +261,360 @@ ClassMethod ParseStream(ByRef CodeStream, Language = "COS", Info)
 	set flags = "PFCE"
 	set returnValue = syntaxColor.Color(CodeStream, .syntaxStream, Language, flags, , , .langs, .syntaxErrors) 
 	if 'returnValue {
-	 write "Fatal error: ", Info, " ", syntaxColor.DLLResultCode, ! 
-	 quit
+		write "Fatal error: ", Info, " ", syntaxColor.DLLResultCode, ! 
+		quit
 	}
 	if syntaxErrors {
-	 write "Syntax error(s): ", Info, !
-	 quit
+		write "Syntax error(s): ", Info, !
+		quit
 	}
 	
 	if ..#DEBUG write !, Info
 	
 	if ..#CODEEXPANSION {
-	 // Build local cache of mapped commands
-	 if '$$$MappedValuesExist do ..InitialiseMap()
+		// Build local cache of mapped commands
+		if '$$$MappedValuesExist do ..InitialiseMap()
 	}
 	
 	do syntaxStream.Rewind() 
 	
 	// Each line of syntax stream is broken down into Language, Type, and Fragment.
 	// We will keep track of the last, current (this) and next values.
-	set (lastLang, lastType, lastFrag) = ""
-	set (lastNonSpaceLang, lastNonSpaceType, lastNonSpaceFrag) = ""
-	set (thisLang, thisType, thisFrag) = ""
-	set (nextLang, nextType, nextFrag) = ""
+	set (last("Lang"), last("Type"), last("Frag")) = ""
+	set (last("NonSpaceLang"), last("NonSpaceType"), last("NonSpaceFrag")) = ""
+	set (this("Lang"), this("Type"), this("Frag")) = ""
+	set (next("Lang"), next("Type"), next("Frag")) = ""
 	// Manipulations are temporarily kept as converted fragment and built up into a converted line of code.
-	set (lastLine, convFrag, convLine) = ""
-	set newLineCount = 0, thisIndent = 0, nextIndent = 0, postConditional = 0, atEnd = 0, jsInSwitch = 0
+	set (last("Line"), conv("Frag"), conv("Line")) = ""
+	set newLineCount = 0, this("Indent") = 0, next("Indent") = 0, conv("PostConditional") = 0, atEnd = 0, conv("JSSwitch") = 0
 	
 	for {
-	 // All syntax data processed
-	 if atEnd quit
-	 
-	 set lastLang = thisLang
-	 set lastType = thisType
-	 set lastFrag = thisFrag
-	 if thisType '= $$$COSWhiteSpace {
-	  set lastNonSpaceLang = thisLang
-	  set lastNonSpaceType = thisType
-	  set lastNonSpaceFrag = thisFrag
-	 }
-	 
-	 set thisLang = nextLang
-	 set thisType = nextType
-	 set thisFrag = nextFrag
-	 
-	 if 'syntaxStream.AtEnd {
-	  set nextLine = syntaxStream.ReadLine() 
-	  set nextLang = $piece(nextLine, ",", 1) 
-	  set nextType = $piece(nextLine, ",", 2) 
-	  set nextFrag = $piece(nextLine, ",", 3, *) 
-	 } else {
-	  set atEnd = 1
-	 }
-	 
-	 if ..#DEBUG write !, nextLine
-	 
-	 if thisLang = "\n" {
-	  // Count consecutive new lines
-	  // if more than 3 (i.e. 2 blank lines in a row) then ignore any subsequent ones
-	  // seems to add extra blank lines around the 32K mark for large methods - so this stops the proliferation
-	  set newLineCount = newLineCount + 1
-	  if newLineCount < 4 {
-	   
-	   if ..#INDENTATION {
-	    // Use an extra indent for multi-line commands 
-	    set firstChar = $extract(convLine, 2)
-	    set multiLineCommand = (firstChar '= "") && ($case(lastLang, "COS":",_", :",") [ firstChar)
-	    if $extract($zstrip(lastLine, ">W"), *) = "," set multiLineCommand = 1
-	    
-	    if $extract(convLine) = $$$OPENWHITESPACE {
-	     // Indentation
-	     set convFrag = $$$OPENWHITESPACE _ $translate($justify("", thisIndent + multiLineCommand), $$$OPENWHITESPACE, $char(9))
-	     if ..#DEBUG write !, thisIndent, ":", nextIndent, ":", multiLineCommand, ":", convLine
-	     set convLine = convFrag _ $extract(convLine, 2, *)
-	    } else {
-	     if ..#DEBUG write !, thisIndent, ":", nextIndent, ":", multiLineCommand, ":", convLine
-	    }
-	   }
-	   do CodeStream.WriteLine(convLine) 
-	  }
-	  
-	  if ..#INDENTATION {
-	   set thisIndent = thisIndent + nextIndent
-	   set nextIndent = 0
-	  }
-	  
-	  set lastLine = convLine
-	  set convLine = ""
-	  continue
-	 } else {
-	  // Reset count of consecutive new lines
-	  set newLineCount = 0
-	 }
-	 
-	 // Indentation
-	 // NOTE: All languages use the same type value for whitespace(1).
-	 if (thisType = $$$COSWhiteSpace) && (convLine = "") {
-	  // Whitespace
-	  if ..#INDENTATION {
-	   // Indentation applied with the line
-	   set convLine = convLine _ $$$OPENWHITESPACE
-	  } else {
-	   set convLine = convLine _ thisFrag
-	  }
-	  continue
-	 }
-	 
-	 if thisLang = "COS" {		
-	  if ..#INDENTATION {
-	   // Indentation Adjustments
-	   if (thisType = $$$COSBrace) {
-	    if "{" = thisFrag  {
-	     set nextIndent = nextIndent + 1
-	    } elseif "}" = thisFrag {
-	     if convLine = $$$OPENWHITESPACE {
-	      set thisIndent = thisIndent - 1
-	     } else {
-	      set nextIndent = nextIndent - 1
-	     }
-	    }
-	   }	
-	  }
-	  // ##class
-	  if thisType = $$$COSObjectClass {
-	   set convFrag = thisFrag
-	   if ..#COSCASE '= "" {
-	    set convFrag = $zconvert(convFrag, ..#COSCASE) 
-	   }
-	   set convLine = convLine _ "##class"
-	   continue
-	  }
-	  // &sql
-	  if thisType = $$$COSSQL {
-	   set convFrag = thisFrag
-	   if ..#SQLCASE '= "" {
-	    set convFrag = $zconvert(convFrag, ..#SQLCASE) 
-	   }
-	   set convLine = convLine _ convFrag 
-	   if ..#INDENTATION {
-	    if "(" = thisFrag  {
-	     set nextIndent = nextIndent + 1
-	    } elseif ")" = thisFrag {
-	     if convLine = $$$OPENWHITESPACE {
-	      set thisIndent = thisIndent - 1
-	     } else {
-	      set nextIndent = nextIndent - 1
-	     }
-	    }
-	   }
-	   continue
-	  }
-	  // &javascript
-	  if thisType = $$$COSJavascript {
-	   set convFrag = thisFrag
-	   if ..#CODEEXPANSION {
-	    if $zconvert(convFrag, "L") = "js" set convFrag = "javascript"
-	   }
-	   if ..#COSCASE '= "" {
-	    set convFrag = $zconvert(convFrag, ..#COSCASE) 
-	   }
-	   set convLine = convLine _ convFrag 
-	   if ..#INDENTATION {
-	    if "<" = thisFrag  {
-	     set nextIndent = nextIndent + 1
-	    } elseif ">" = thisFrag {
-	     if convLine = $$$OPENWHITESPACE {
-	      set thisIndent = thisIndent - 1
-	     } else {
-	      set nextIndent = nextIndent - 1
-	     }
-	    }
-	   }
-	   continue
-	  }
-	  // &html
-	  if thisType = $$$COSHTML {
-	   set convFrag = $zconvert(thisFrag, "L") 
-	   set convLine = convLine _ convFrag 
-	   continue
-	  }
-	  if thisType = $$$COSPreProcessorCommand {
-	   set convFrag = $zconvert(thisFrag, "L") 
-	   set convLine = convLine _ convFrag 
-	   if ..#INDENTATION {
-	    if $case(thisFrag, "if":1, "ifdef":1, "ifndef":1, :0)  {
-	     set nextIndent = nextIndent + 1
-	    } elseif $case(thisFrag, "else":1, "elseif":1, :0) {
-	     set thisIndent = thisIndent - 1
-	     set nextIndent = nextIndent + 1
-	    } elseif $case(thisFrag, "endif":1, :0) {
-	     set thisIndent = thisIndent - 1
-	    }
-	   }
-	   continue
-	  }
-	  if thisType = $$$COSComment {
-	   set convFrag = thisFrag
-	   
-	   if ..#COSCOMMENT '= "" {
-	    set cosComment = ..#COSCOMMENT
-	    if (..#COSCOMMENT = "#;") && (lastNonSpaceType '= "") {
-	     // Comment is after the start of the line
-	     set cosComment = "##;"
-	    }
-	    
-	    // Convert single line comment style
-	    // Leave the double semi-colon as this acts differently to other styles.
-	    // Double semi-colon retains the comment in depolyed output.
-	    if $extract(thisFrag, 1) = ";", $extract(thisFrag, 1, 2) '= ";;" set convFrag = ..#COSCOMMENT _ $extract(thisFrag, 2, * ) 
-	    if $extract(thisFrag, 1, 2) = "#;" set convFrag = ..#COSCOMMENT _ $extract(thisFrag, 3, * ) 
-	    if $extract(thisFrag, 1, 3) = "##;" set convFrag = ..#COSCOMMENT _ $extract(thisFrag, 4, * ) 
-	    if ..#COSWHITESPACE {
-	     if $extract(convFrag, 1, 2) = "//", $extract(convFrag, 3) '= " " set convFrag = ..#COSCOMMENT _ " " _ $extract(thisFrag, 3, * ) 
-	    }
-	   }
-	   set convLine = convLine _ convFrag 
-	   continue
-	  }
-	  // Function or Command or Special Variables
-	  if (thisType = $$$COSFunction) || (thisType = $$$COSCommand) || (thisType = $$$COSSystemvariable) {
-	   set convFrag = thisFrag
-	   
-	   if ..#CODEEXPANSION {
-	    set convFrag = $get($$$MappedValue(thisLang, thisType, $zconvert(convFrag, "L")), convFrag) 
-	   }
-	   
-	   if ..#COSCASE '= "" {
-	    // Change case of functions, commands, and special variables
-	    set convFrag = $zconvert(convFrag, ..#COSCASE) 
-	   }
-	   set convLine = convLine _ convFrag
-	   continue
-	  }
-	  // Operator
-	  if thisType = $$$COSOperator {
-	   set convFrag = $zconvert(thisFrag, "L") 
-	   
-	   if ..#COSWHITESPACE {
-	    // Include whitespace either side of operators except for 
-	    //  by reference, not, and post conditions.
-	    // Post conditional expressions can only use spaces inside parenthesis.
-	    if ('postConditional) && (".'" '[ convFrag) && ((convFrag '= "+") || $case(lastNonSpaceType, $$$COSLocalvariable:1, $$$COSNumber:1, :0)) {
-	     if lastType '= $$$COSWhiteSpace set convFrag = " " _ convFrag
-	     if nextType '= $$$COSWhiteSpace set convFrag = convFrag _ " "
-	    }
-	   }
-	   set convLine = convLine _ convFrag 
-	   continue
-	  }
-	  // Delimiter
-	  if thisType = $$$COSDelimiter {
-	   set convFrag = $zconvert(thisFrag, "L") 
-	   
-	   if ..#COSWHITESPACE {
-	    if convFrag = "," {
-	     // Include whitespace before the next parameter.
-	     if nextType '= $$$COSWhiteSpace set convFrag = convFrag _ " "
-	    }	
-	    set postConditional = (convFrag = ":")
-	   }
-	   set convLine = convLine _ convFrag 
-	   continue
-	  }
-	  set convLine = convLine _ thisFrag 
-	 } elseif thisLang = "SQL" {
-	  if ..#INDENTATION {
-	   // Indentation Adjustments
-	   if (thisType = $$$SQLDelimiter) {
-	    if "(" = thisFrag  {
-	     set nextIndent = nextIndent + 1
-	    } elseif ")" = thisFrag {
-	     if convLine = $$$OPENWHITESPACE {
-	      set thisIndent = thisIndent - 1
-	     } else {
-	      set nextIndent = nextIndent - 1
-	     }
-	    }
-	   }
-	  }
-	  // SQL keywords and operators
-	  if thisType = $$$SQLStatementkeyword || (thisType = $$$SQLQualifierkeyword) || (thisType = $$$SQLOperator) {
-	   if ..#SQLCASE '= "" {
-	    // Upper case SQL keywords and operators
-	    set convFrag = $zconvert(thisFrag, ..#SQLCASE) 
-	   }
-	   set convLine = convLine _ convFrag 
-	   continue
-	  } 
-	  set convLine = convLine _ thisFrag 
-	 } elseif thisLang = "JAVASCRIPT" {
-	  if ..#INDENTATION {
-	   // Indentation Adjustments
-	   if (thisType = $$$JAVASCRIPTDelimiter) {
-	    if "{(" [ thisFrag  {
-	     set nextIndent = nextIndent + 1
-	     if jsInSwitch && (thisFrag = "{") {
-	      if $increment(jsInSwitch(jsInSwitch, "braceCount"))
-	     }
-	    } elseif "})" [ thisFrag {
-	     set i = 1
-	     if jsInSwitch && (thisFrag = "}") {
-	      if $increment(jsInSwitch(jsInSwitch, "braceCount"), -1)
-	      if jsInSwitch(jsInSwitch, "braceCount") = 0 {
-	       set i = 2
-	       if $increment(jsInSwitch, -1)
-	      }
-	     }
-	     if convLine = $$$OPENWHITESPACE {
-	      set thisIndent = thisIndent - i
-	     } else {
-	      set nextIndent = nextIndent - i
-	     }
-	    }
-	   }
-	  }
-	  if (thisType = $$$JAVASCRIPTStatementkeyword) {
-	   if $case(thisFrag, "switch":1, :0)  {
-	    set nextIndent = nextIndent + 1
-	    if $increment(jsInSwitch)
-	   } elseif $case(thisFrag, "case":1, "default":1, :0) {
-	    set thisIndent = thisIndent - 1
-	    set nextIndent = nextIndent + 1
-	   }
-	  }
-	  set convLine = convLine _ thisFrag 
-	 } elseif thisLang = "HTML" {
-	  // <head></head>
-	  // <csp:parameter> 
-	  if thisType = $$$HTMLTag {
-	   set convFrag = $zconvert(thisFrag, "L") 
-	   if ..#CODEEXPANSION {
-	    // Convert <server> to <script language="cache" runat="server">
-	    if convFrag = "server" {
-	     set convFrag = "script"
-	     if lastType = $$$HTMLDelimiter, lastFrag '= "/" set convFrag = convFrag _ " language=""cache"" runat=""server"""
-	    }
-	   }
-	   set convLine = convLine _ convFrag 
-	   continue
-	  }
-	  set convLine = convLine _ thisFrag 
-	 } else {
-	  set convLine = convLine _ thisFrag
-	 }
+		// All syntax data processed
+		if atEnd quit
+		
+		set last("Lang") = this("Lang")
+		set last("Type") = this("Type")
+		set last("Frag") = this("Frag")
+		if this("Type") '= $$$COSWhiteSpace {
+			set last("NonSpaceLang") = this("Lang")
+			set last("NonSpaceType") = this("Type")
+			set last("NonSpaceFrag") = this("Frag")
+		}
+		
+		set this("Lang") = next("Lang")
+		set this("Type") = next("Type")
+		set this("Frag") = next("Frag")
+		
+		if 'syntaxStream.AtEnd {
+			set nextLine = syntaxStream.ReadLine() 
+			set next("Lang") = $piece(nextLine, ",", 1) 
+			set next("Type") = $piece(nextLine, ",", 2) 
+			set next("Frag") = $piece(nextLine, ",", 3, *) 
+		} else {
+			set atEnd = 1
+		}
+		
+		if ..#DEBUG write !, nextLine
+		
+		if this("Lang") = "\n" {
+			// Count consecutive new lines
+			// if more than 3 (i.e. 2 blank lines in a row) then ignore any subsequent ones
+			// seems to add extra blank lines around the 32K mark for large methods - so this stops the proliferation
+			set newLineCount = newLineCount + 1
+			if newLineCount < 4 {
+				
+				do ..ParseLine(.last, .this, .next, .conv)
+				
+				do CodeStream.WriteLine(conv("Line")) 
+			}
+			
+			if ..#INDENTATION {
+				set this("Indent") = this("Indent") + next("Indent")
+				set next("Indent") = 0
+			}
+			
+			set last("Line") = conv("Line")
+			set conv("Line") = ""
+			continue
+		} else {
+			// Reset count of consecutive new lines
+			set newLineCount = 0
+		}
+		
+		do ..ParseFragment(.last, .this, .next, .conv)
+	}
+}
+
+ClassMethod ParseLine(ByRef last, ByRef this, ByRef next, ByRef conv)
+{
+	if ..#INDENTATION {
+		// Use an extra indent for multi-line commands 
+		set firstChar = $extract(conv("Line"), 2)
+		set multiLineCommand = (firstChar '= "") && ($case(last("Lang"), "COS":",_", :",") [ firstChar)
+		if $extract($zstrip(last("Line"), ">W"), *) = "," set multiLineCommand = 1
+		
+		if $extract(conv("Line")) = ..#OPENWHITESPACE {
+			// Indentation
+			set conv("Frag") = ..#OPENWHITESPACE _ $translate($justify("", this("Indent") + multiLineCommand), $char(32), $char(9))
+			if ..#DEBUG write !, this("Indent"), ":", next("Indent"), ":", multiLineCommand, ":", conv("Line")
+			set conv("Line") = conv("Frag") _ $extract(conv("Line"), 2, *)
+		} else {
+			if ..#DEBUG write !, this("Indent"), ":", next("Indent"), ":", multiLineCommand, ":", conv("Line")
+		}
+	}
+}
+
+ClassMethod ParseFragment(ByRef last, ByRef this, ByRef next, ByRef conv)
+{
+	// Indentation
+	// NOTE: All languages use the same type value for whitespace(1).
+	if (this("Type") = $$$COSWhiteSpace) && (conv("Line") = "") {
+		// Whitespace
+		if ..#INDENTATION {
+			// Indentation applied with the line
+			set conv("Line") = conv("Line") _ ..#OPENWHITESPACE
+		} else {
+			set conv("Line") = conv("Line") _ this("Frag")
+		}
+		quit
+	}
+	
+	if this("Lang") = "COS" {		
+		if ..#INDENTATION {
+			// Indentation Adjustments
+			if (this("Type") = $$$COSBrace) {
+				if "{" = this("Frag")  {
+					set next("Indent") = next("Indent") + 1
+				} elseif "}" = this("Frag") {
+					if conv("Line") = ..#OPENWHITESPACE {
+						set this("Indent") = this("Indent") - 1
+					} else {
+						set next("Indent") = next("Indent") - 1
+					}
+				}
+			}	
+		}
+		// ##class
+		if this("Type") = $$$COSObjectClass {
+			set conv("Frag") = this("Frag")
+			if ..#COSCASE '= "" {
+				set conv("Frag") = $zconvert(conv("Frag"), ..#COSCASE) 
+			}
+			set conv("Line") = conv("Line") _ "##class"
+			quit
+		}
+		// &sql
+		if this("Type") = $$$COSSQL {
+			set conv("Frag") = this("Frag")
+			if ..#SQLCASE '= "" {
+				set conv("Frag") = $zconvert(conv("Frag"), ..#SQLCASE) 
+			}
+			set conv("Line") = conv("Line") _ conv("Frag") 
+			if ..#INDENTATION {
+				if "(" = this("Frag")  {
+					set next("Indent") = next("Indent") + 1
+				} elseif ")" = this("Frag") {
+					if conv("Line") = ..#OPENWHITESPACE {
+						set this("Indent") = this("Indent") - 1
+					} else {
+						set next("Indent") = next("Indent") - 1
+					}
+				}
+			}
+			quit
+		}
+		// &javascript
+		if this("Type") = $$$COSJavascript {
+			set conv("Frag") = this("Frag")
+			if ..#CODEEXPANSION {
+				if $zconvert(conv("Frag"), "L") = "js" set conv("Frag") = "javascript"
+			}
+			if ..#COSCASE '= "" {
+				set conv("Frag") = $zconvert(conv("Frag"), ..#COSCASE) 
+			}
+			set conv("Line") = conv("Line") _ conv("Frag") 
+			if ..#INDENTATION {
+				if "<" = this("Frag")  {
+					set next("Indent") = next("Indent") + 1
+				} elseif ">" = this("Frag") {
+					if conv("Line") = ..#OPENWHITESPACE {
+						set this("Indent") = this("Indent") - 1
+					} else {
+						set next("Indent") = next("Indent") - 1
+					}
+				}
+			}
+			quit
+		}
+		// &html
+		if this("Type") = $$$COSHTML {
+			set conv("Frag") = $zconvert(this("Frag"), "L") 
+			set conv("Line") = conv("Line") _ conv("Frag") 
+			quit
+		}
+		if this("Type") = $$$COSPreProcessorCommand {
+			set conv("Frag") = $zconvert(this("Frag"), "L") 
+			set conv("Line") = conv("Line") _ conv("Frag") 
+			if ..#INDENTATION {
+				if $case(this("Frag"), "if":1, "ifdef":1, "ifndef":1, :0)  {
+					set next("Indent") = next("Indent") + 1
+				} elseif $case(this("Frag"), "else":1, "elseif":1, :0) {
+					set this("Indent") = this("Indent") - 1
+					set next("Indent") = next("Indent") + 1
+				} elseif $case(this("Frag"), "endif":1, :0) {
+					set this("Indent") = this("Indent") - 1
+				}
+			}
+			quit
+		}
+		if this("Type") = $$$COSComment {
+			set conv("Frag") = this("Frag")
+			
+			if ..#COSCOMMENT '= "" {
+				set cosComment = ..#COSCOMMENT
+				if (..#COSCOMMENT = "#;") && (last("NonSpaceType") '= "") {
+					// Comment is after the start of the line
+					set cosComment = "##;"
+				}
+				
+				// Convert single line comment style
+				// Leave the double semi-colon as this acts differently to other styles.
+				// Double semi-colon retains the comment in depolyed output.
+				if $extract(this("Frag"), 1) = ";", $extract(this("Frag"), 1, 2) '= ";;" set conv("Frag") = ..#COSCOMMENT _ $extract(conv("Frag"), 2, *) 
+				if $extract(this("Frag"), 1, 2) = "#;" set conv("Frag") = ..#COSCOMMENT _ $extract(conv("Frag"), 3, *) 
+				if $extract(this("Frag"), 1, 3) = "##;" set conv("Frag") = ..#COSCOMMENT _ $extract(conv("Frag"), 4, *) 
+				if ..#COSWHITESPACE {
+					if $extract(conv("Frag"), 1, 2) = "//", $extract(conv("Frag"), 3) '= " " set conv("Frag") = ..#COSCOMMENT _ " " _ $extract(conv("Frag"), 3, *) 
+				}
+			}
+			set conv("Line") = conv("Line") _ conv("Frag") 
+			quit
+		}
+		// Function or Command or Special Variables
+		if (this("Type") = $$$COSFunction) || (this("Type") = $$$COSCommand) || (this("Type") = $$$COSSystemvariable) {
+			set conv("Frag") = this("Frag")
+			
+			if ..#CODEEXPANSION {
+				set conv("Frag") = $get($$$MappedValue(this("Lang"), this("Type"), $zconvert(conv("Frag"), "L")), conv("Frag")) 
+			}
+			
+			if ..#COSCASE '= "" {
+				// Change case of functions, commands, and special variables
+				set conv("Frag") = $zconvert(conv("Frag"), ..#COSCASE) 
+			}
+			set conv("Line") = conv("Line") _ conv("Frag")
+			quit
+		}
+		// Operator
+		if this("Type") = $$$COSOperator {
+			set conv("Frag") = $zconvert(this("Frag"), "L") 
+			
+			if ..#COSWHITESPACE {
+				// Include whitespace either side of operators except for 
+				//  by reference, not, and post conditions.
+				// Post conditional expressions can only use spaces inside parenthesis.
+				if ('conv("PostConditional")) && (".'" '[ conv("Frag")) && ((conv("Frag") '= "+") || $case(last("NonSpaceType"), $$$COSLocalvariable:1, $$$COSNumber:1, :0)) {
+					if last("Type") '= $$$COSWhiteSpace set conv("Frag") = " " _ conv("Frag")
+					if next("Type") '= $$$COSWhiteSpace set conv("Frag") = conv("Frag") _ " "
+				}
+			}
+			set conv("Line") = conv("Line") _ conv("Frag") 
+			quit
+		}
+		// Delimiter
+		if this("Type") = $$$COSDelimiter {
+			set conv("Frag") = $zconvert(this("Frag"), "L") 
+			
+			if ..#COSWHITESPACE {
+				if conv("Frag") = "," {
+					// Include whitespace before the next parameter.
+					if next("Type") '= $$$COSWhiteSpace set conv("Frag") = conv("Frag") _ " "
+				}	
+				set conv("PostConditional") = (conv("Frag") = ":")
+			}
+			set conv("Line") = conv("Line") _ conv("Frag") 
+			quit
+		}
+		set conv("Line") = conv("Line") _ this("Frag") 
+	} elseif this("Lang") = "SQL" {
+		if ..#INDENTATION {
+			// Indentation Adjustments
+			if (this("Type") = $$$SQLDelimiter) {
+				if "(" = this("Frag")  {
+					set next("Indent") = next("Indent") + 1
+				} elseif ")" = this("Frag") {
+					if conv("Line") = ..#OPENWHITESPACE {
+						set this("Indent") = this("Indent") - 1
+					} else {
+						set next("Indent") = next("Indent") - 1
+					}
+				}
+			}
+		}
+		// SQL keywords and operators
+		if this("Type") = $$$SQLStatementkeyword || (this("Type") = $$$SQLQualifierkeyword) || (this("Type") = $$$SQLOperator) {
+			if ..#SQLCASE '= "" {
+				// Upper case SQL keywords and operators
+				set conv("Frag") = $zconvert(this("Frag"), ..#SQLCASE) 
+			}
+			set conv("Line") = conv("Line") _ conv("Frag") 
+			quit
+		} 
+		set conv("Line") = conv("Line") _ this("Frag") 
+	} elseif this("Lang") = "JAVASCRIPT" {
+		if ..#INDENTATION {
+			// Indentation Adjustments
+			if (this("Type") = $$$JAVASCRIPTDelimiter) {
+				if "{(" [ this("Frag")  {
+					set next("Indent") = next("Indent") + 1
+					if conv("JSSwitch") && (this("Frag") = "{") {
+						if $increment(conv("JSSwitch", conv("JSSwitch"), "braceCount"))
+					}
+				} elseif "})" [ this("Frag") {
+					set i = 1
+					if conv("JSSwitch") && (this("Frag") = "}") {
+						if $increment(conv("JSSwitch", conv("JSSwitch"), "braceCount"), -1)
+						if conv("JSSwitch", conv("JSSwitch"), "braceCount") = 0 {
+							set i = 2
+							if $increment(conv("JSSwitch"), -1)
+						}
+					}
+					if conv("Line") = ..#OPENWHITESPACE {
+						set this("Indent") = this("Indent") - i
+					} else {
+						set next("Indent") = next("Indent") - i
+					}
+				}
+			}
+		}
+		if (this("Type") = $$$JAVASCRIPTStatementkeyword) {
+			if $case(this("Frag"), "switch":1, :0)  {
+				set next("Indent") = next("Indent") + 1
+				if $increment(conv("JSSwitch"))
+			} elseif $case(this("Frag"), "case":1, "default":1, :0) {
+				set this("Indent") = this("Indent") - 1
+				set next("Indent") = next("Indent") + 1
+			}
+		}
+		set conv("Line") = conv("Line") _ this("Frag") 
+	} elseif this("Lang") = "HTML" {
+		// <head></head>
+		// <csp:parameter> 
+		if this("Type") = $$$HTMLTag {
+			set conv("Frag") = $zconvert(this("Frag"), "L") 
+			if ..#CODEEXPANSION {
+				// Convert <server> to <script language="cache" runat="server">
+				if conv("Frag") = "server" {
+					set conv("Frag") = "script"
+					if last("Type") = $$$HTMLDelimiter, last("Frag") '= "/" set conv("Frag") = conv("Frag") _ " language=""cache"" runat=""server"""
+				}
+			}
+			set conv("Line") = conv("Line") _ conv("Frag") 
+			quit
+		}
+		set conv("Line") = conv("Line") _ this("Frag") 
+	} else {
+		set conv("Line") = conv("Line") _ this("Frag")
 	}
 }
 
@@ -877,3 +891,4 @@ ClassMethod InitialiseMap()
 }
 
 }
+

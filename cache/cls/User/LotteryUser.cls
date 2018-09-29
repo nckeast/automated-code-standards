@@ -22,7 +22,7 @@ Property History As list Of LotteryActivity;
 /// Change the password for this user.
 Method changePassword(pass As %String) As %Integer
 {
-	set ..Password = pass
+	set ..Password = pass	
 	quit
 }
 

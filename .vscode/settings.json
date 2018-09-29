@@ -1,0 +1,6 @@
+{
+    "cos.conn.label": "IDP",
+    "cos.conn.ns": "DEMO",
+    "cos.conn.port": 57773,
+    "cos.export.atelier": true
+}
