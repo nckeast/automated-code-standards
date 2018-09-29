@@ -41,6 +41,13 @@ Parameter SQLCASE = "U";
 /// Used as first character for lines beginning with white space.
 Parameter OPENWHITESPACE = "	";
 
+/// Change Get methods 
+/// Objects such as %ResultSet, %CSP.Session, %CSP.Request provide
+/// <method>Get</method> methods for backwards compatibility.
+/// There is performance gain by using $get(object.Data("...")) instead of object.Get("...")
+/// When <parameter>CHANGEGET</parameter> is enabled these constructs are automatically applied.
+Parameter CHANGEGET = 1;
+
 /// When enabled the system will debug output to current device during execution.
 Parameter DEBUG = 0;
 
@@ -286,8 +293,9 @@ ClassMethod ParseStream(ByRef CodeStream, Language = "COS", Info)
 	set (next("Lang"), next("Type"), next("Frag")) = ""
 	// Manipulations are temporarily kept as converted fragment and built up into a converted line of code.
 	set (last("Line"), conv("Frag"), conv("Line")) = ""
-	set newLineCount = 0, this("Indent") = 0, next("Indent") = 0, conv("PostConditional") = 0, atEnd = 0, conv("JSSwitch") = 0
+	set this("Indent") = 0, next("Indent") = 0, conv("PostConditional") = 0, conv("JSSwitch") = 0, conv("PatternMatch") = 0
 	
+	set newLineCount = 0, atEnd = 0
 	for {
 		// All syntax data processed
 		if atEnd quit
@@ -360,6 +368,28 @@ ClassMethod ParseLine(ByRef last, ByRef this, ByRef next, ByRef conv)
 			set conv("Line") = conv("Frag") _ $extract(conv("Line"), 2, *)
 		} else {
 			if ..#DEBUG write !, this("Indent"), ":", next("Indent"), ":", multiLineCommand, ":", conv("Line")
+		}
+	}
+	if ..#CHANGEGET {
+		// rs.GetDataByName( -> $Get(rs.Data(
+		for method = "Get", "GetDataByName" {
+			set charIndex = $find(conv("Line"), "." _ method _ "(")
+			if charIndex {
+				set endIndex = $find(conv("Line"), ")", charIndex)
+				set args = $extract(conv("Line"), charIndex, endIndex - 2)
+				// Get the object variable
+				set var = ""
+				for charIndex = charIndex - ($length(method) + 3):-1:0 {
+					set varChar=$extract(conv("Line"), charIndex)
+					if varChar '? 1(1A,1N,1"%") quit
+					set var = varChar _ var
+				}
+				if endIndex {
+					set conv("Line") = $extract(conv("Line"), 1, charIndex)
+						_ $$$MappedValue("COS", $$$COSFunction, "$get")
+						_ "(" _ var _ ".Data(" _ args _ "))" _ $extract(conv("Line"), endIndex, *)
+				}
+			}
 		}
 	}
 }
@@ -513,10 +543,12 @@ ClassMethod ParseFragment(ByRef last, ByRef this, ByRef next, ByRef conv)
 				// Include whitespace either side of operators except for 
 				//  by reference, not, and post conditions.
 				// Post conditional expressions can only use spaces inside parenthesis.
+				// Pattern match cannot be broken up with spaces.
 				if ('conv("PostConditional")) && (".'" '[ conv("Frag")) && ((conv("Frag") '= "+") || $case(last("NonSpaceType"), $$$COSLocalvariable:1, $$$COSNumber:1, :0)) {
 					if last("Type") '= $$$COSWhiteSpace set conv("Frag") = " " _ conv("Frag")
 					if next("Type") '= $$$COSWhiteSpace set conv("Frag") = conv("Frag") _ " "
 				}
+				set conv("PatternMatch") = (conv("Frag") = ":")
 			}
 			set conv("Line") = conv("Line") _ conv("Frag") 
 			quit
@@ -526,7 +558,7 @@ ClassMethod ParseFragment(ByRef last, ByRef this, ByRef next, ByRef conv)
 			set conv("Frag") = $zconvert(this("Frag"), "L") 
 			
 			if ..#COSWHITESPACE {
-				if conv("Frag") = "," {
+				if ('conv("PatternMatch")) && (conv("Frag") = ",") {
 					// Include whitespace before the next parameter.
 					if next("Type") '= $$$COSWhiteSpace set conv("Frag") = conv("Frag") _ " "
 				}	
