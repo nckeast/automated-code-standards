@@ -53,12 +53,17 @@ Parameter DEBUG = 0;
 
 Method OnAfterSave(InternalName As %String, Object As %RegisteredObject) As %Status
 {
-	// Execute source control hook
-	set status = ##super(InternalName, .Object) 
-	if $$$ISERR(status) quit status
-	
-	// Execute code standards checks
-	set status = ..ParseDocument(InternalName, .Object) 
+	try {	
+		// Execute source control hook
+		set status = ##super(InternalName, .Object) 
+		if $$$ISERR(status) quit 
+		
+		// Execute code standards checks
+		set status = ..ParseDocument(InternalName, .Object)
+	} catch ex {
+		set status = ex.AsStatus()
+		do $system.OBJ.DisplayError(status)
+	} 
 	quit status
 }
 
@@ -293,7 +298,8 @@ ClassMethod ParseStream(ByRef CodeStream, Language = "COS", Info)
 	set (next("Lang"), next("Type"), next("Frag")) = ""
 	// Manipulations are temporarily kept as converted fragment and built up into a converted line of code.
 	set (last("Line"), conv("Frag"), conv("Line")) = ""
-	set this("Indent") = 0, next("Indent") = 0, conv("PostConditional") = 0, conv("JSSwitch") = 0, conv("PatternMatch") = 0
+	set this("Indent") = 0, next("Indent") = 0
+	set conv("PostConditional") = 0, conv("JSSwitch") = 0, conv("PatternMatch") = 0
 	
 	set newLineCount = 0, atEnd = 0
 	for {
@@ -381,7 +387,7 @@ ClassMethod ParseLine(ByRef last, ByRef this, ByRef next, ByRef conv)
 				set var = ""
 				for charIndex = charIndex - ($length(method) + 3):-1:0 {
 					set varChar=$extract(conv("Line"), charIndex)
-					if varChar '? 1(1A,1N,1"%") quit
+					if varChar '? 1(1A, 1N, 1"%") quit
 					set var = varChar _ var
 				}
 				if endIndex {
@@ -439,18 +445,21 @@ ClassMethod ParseFragment(ByRef last, ByRef this, ByRef next, ByRef conv)
 			if ..#SQLCASE '= "" {
 				set conv("Frag") = $zconvert(conv("Frag"), ..#SQLCASE) 
 			}
-			set conv("Line") = conv("Line") _ conv("Frag") 
 			if ..#INDENTATION {
 				if "(" = this("Frag")  {
 					set next("Indent") = next("Indent") + 1
 				} elseif ")" = this("Frag") {
+					zwrite conv("Line")
 					if conv("Line") = ..#OPENWHITESPACE {
 						set this("Indent") = this("Indent") - 1
+						zwrite this("Indent")
 					} else {
 						set next("Indent") = next("Indent") - 1
+						zwrite next("Indent")
 					}
 				}
 			}
+			set conv("Line") = conv("Line") _ conv("Frag") 
 			quit
 		}
 		// &javascript
@@ -462,7 +471,6 @@ ClassMethod ParseFragment(ByRef last, ByRef this, ByRef next, ByRef conv)
 			if ..#COSCASE '= "" {
 				set conv("Frag") = $zconvert(conv("Frag"), ..#COSCASE) 
 			}
-			set conv("Line") = conv("Line") _ conv("Frag") 
 			if ..#INDENTATION {
 				if "<" = this("Frag")  {
 					set next("Indent") = next("Indent") + 1
@@ -474,6 +482,7 @@ ClassMethod ParseFragment(ByRef last, ByRef this, ByRef next, ByRef conv)
 					}
 				}
 			}
+			set conv("Line") = conv("Line") _ conv("Frag") 
 			quit
 		}
 		// &html
