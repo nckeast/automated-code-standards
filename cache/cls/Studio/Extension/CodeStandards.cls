@@ -1,7 +1,7 @@
 Include (Studio.Extension.CodeStandards, %occErrors)
 
 /// Example of automating code standards
-Class Studio.Extension.CodeStandards Extends Studio.SourceControl.GIT
+Class %Studio.Extension.CodeStandards Extends %Studio.SourceControl.ISC
 {
 
 /// Indentation
@@ -46,7 +46,7 @@ Parameter OPENWHITESPACE = "	";
 /// <method>Get</method> methods for backwards compatibility.
 /// There is performance gain by using $get(object.Data("...")) instead of object.Get("...")
 /// When <parameter>CHANGEGET</parameter> is enabled these constructs are automatically applied.
-Parameter CHANGEGET = 1;
+Parameter CHANGEGET = 0;
 
 /// When enabled the system will debug output to current device during execution.
 Parameter DEBUG = 0;
@@ -54,12 +54,13 @@ Parameter DEBUG = 0;
 Method OnAfterSave(InternalName As %String, Object As %RegisteredObject) As %Status
 {
 	try {	
-		// Execute source control hook
-		set status = ##super(InternalName, .Object) 
-		if $$$ISERR(status) quit 
-		
 		// Execute code standards checks
 		set status = ..ParseDocument(InternalName, .Object)
+		if $$$ISERR(status) quit 
+		
+		// Execute source control hook
+		set status = ##super(InternalName, .Object) 
+		
 	} catch ex {
 		set status = ex.AsStatus()
 		do $system.OBJ.DisplayError(status)
@@ -363,8 +364,15 @@ ClassMethod ParseLine(ByRef last, ByRef this, ByRef next, ByRef conv)
 {
 	if ..#INDENTATION {
 		// Use an extra indent for multi-line commands 
-		set firstChar = $extract(conv("Line"), 2)
-		set multiLineCommand = (firstChar '= "") && ($case(last("Lang"), "COS":",_", :",") [ firstChar)
+		if last("Lang") = "COS" {
+			set firstChar = $extract(conv("Line"), 2)
+			set multiLineCommand = (firstChar '= "") && ($case(last("Lang"), "COS":",_", :",") [ firstChar)
+		} elseif last("Lang") = "SQL" {
+			set firstWord = $piece($extract(conv("Line"), 2, *), " ")
+			set multiLineCommand = $case(firstWord, "AND":1, "OR":1, :0)
+		} else {
+			set multiLineCommand = 0
+		}
 		if $extract($zstrip(last("Line"), ">W"), *) = "," set multiLineCommand = 1
 		
 		if $extract(conv("Line")) = ..#OPENWHITESPACE {
@@ -387,7 +395,7 @@ ClassMethod ParseLine(ByRef last, ByRef this, ByRef next, ByRef conv)
 				set var = ""
 				for charIndex = charIndex - ($length(method) + 3):-1:0 {
 					set varChar=$extract(conv("Line"), charIndex)
-					if varChar '? 1(1A, 1N, 1"%") quit
+					if varChar '? 1(1A,1N,1"%") quit
 					set var = varChar _ var
 				}
 				if endIndex {
@@ -449,13 +457,10 @@ ClassMethod ParseFragment(ByRef last, ByRef this, ByRef next, ByRef conv)
 				if "(" = this("Frag")  {
 					set next("Indent") = next("Indent") + 1
 				} elseif ")" = this("Frag") {
-					zwrite conv("Line")
 					if conv("Line") = ..#OPENWHITESPACE {
 						set this("Indent") = this("Indent") - 1
-						zwrite this("Indent")
 					} else {
 						set next("Indent") = next("Indent") - 1
-						zwrite next("Indent")
 					}
 				}
 			}
@@ -549,6 +554,9 @@ ClassMethod ParseFragment(ByRef last, ByRef this, ByRef next, ByRef conv)
 			set conv("Frag") = $zconvert(this("Frag"), "L") 
 			
 			if ..#COSWHITESPACE {
+				// Recognise pattern match operators
+				set conv("PatternMatch") = ((conv("Frag") = "?") || (conv("Frag") = "'?"))
+								
 				// Include whitespace either side of operators except for 
 				//  by reference, not, and post conditions.
 				// Post conditional expressions can only use spaces inside parenthesis.
@@ -557,7 +565,6 @@ ClassMethod ParseFragment(ByRef last, ByRef this, ByRef next, ByRef conv)
 					if last("Type") '= $$$COSWhiteSpace set conv("Frag") = " " _ conv("Frag")
 					if next("Type") '= $$$COSWhiteSpace set conv("Frag") = conv("Frag") _ " "
 				}
-				set conv("PatternMatch") = (conv("Frag") = ":")
 			}
 			set conv("Line") = conv("Line") _ conv("Frag") 
 			quit
@@ -932,4 +939,3 @@ ClassMethod InitialiseMap()
 }
 
 }
-
