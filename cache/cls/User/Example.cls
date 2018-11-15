@@ -52,7 +52,6 @@ ClassMethod Fibonacci()
     }
 }
 
-
 ClientMethod Method2(Parameter As %String) [ Language = javascript ]
 {
 	function sample() {
@@ -85,6 +84,17 @@ ClientMethod Method2(Parameter As %String) [ Language = javascript ]
 	}
 }
 
+ClassMethod AddAdressen(intRange As %Integer = 2500)
+{
+                s sql="select id from vms_marketing.aktionskopf"
+                $$$MakeRS(sql,rs)
+                While rs.Next()
+                {
+                               D ..AddAdressenKopf(rs.Get("ID"),$RANDOM(intRange))
+                }
+                $$$CloseRS(rs)
+}
+
 Storage Default
 {
 <Data name="ExampleDefaultData">
@@ -104,3 +114,4 @@ Storage Default
 }
 
 }
+
