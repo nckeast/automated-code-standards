@@ -48,6 +48,13 @@ Parameter OPENWHITESPACE = "	";
 /// When <parameter>CHANGEGET</parameter> is enabled these constructs are automatically applied.
 Parameter CHANGEGET = 0;
 
+/// CHANGEGET functionality is restricted to variable matching this pattern.
+Parameter CHANGEGETVARIABLE = "1(1""rs"",1""resultSet"",1""%request"",1""%session"")";
+
+/// Brace Postion
+/// Adjust brace usage to end the line with opening brace and start new lines for closing brace.
+Parameter BRACEPOSITION = 1;
+
 /// When enabled the system will debug output to current device during execution.
 Parameter DEBUG = 0;
 
@@ -300,57 +307,27 @@ ClassMethod ParseStream(ByRef CodeStream, Language = "COS", Info)
 	// Manipulations are temporarily kept as converted fragment and built up into a converted line of code.
 	set (last("Line"), conv("Frag"), conv("Line")) = ""
 	set this("Indent") = 0, next("Indent") = 0
+	set this("SyntaxStream") = syntaxStream, this("AtEnd") = 0
 	set conv("PostConditional") = 0, conv("JSSwitch") = 0, conv("PatternMatch") = 0
+	set conv("CodeStream") = CodeStream
 	
 	set newLineCount = 0, atEnd = 0
 	for { 
 		// All syntax data processed
-		if atEnd quit
-		
-		set last("Lang") = this("Lang")
-		set last("Type") = this("Type")
-		set last("Frag") = this("Frag")
-		if this("Type") '= $$$COSWhiteSpace { 
-			set last("NonSpaceLang") = this("Lang")
-			set last("NonSpaceType") = this("Type")
-			set last("NonSpaceFrag") = this("Frag")
-		} 
-		
-		set this("Lang") = next("Lang")
-		set this("Type") = next("Type")
-		set this("Frag") = next("Frag")
-		
-		if 'syntaxStream.AtEnd { 
-			set nextLine = syntaxStream.ReadLine() 
-			set next("Lang") = $piece(nextLine, ",", 1) 
-			set next("Type") = $piece(nextLine, ",", 2) 
-			set next("Frag") = $piece(nextLine, ",", 3, *) 
-		} else { 
-			set atEnd = 1
-		} 
-		
-		if ..#DEBUG write !, nextLine
+		if this("AtEnd") quit
+		do ..ReadFragment(.last, .this, .next)
 		
 		if this("Lang") = "\n" { 
 			// Count consecutive new lines
 			// if more than 3 (i.e. 2 blank lines in a row) then ignore any subsequent ones
 			// seems to add extra blank lines around the 32K mark for large methods - so this stops the proliferation
 			set newLineCount = newLineCount + 1
-			if newLineCount < 4 { 
-				
-				do ..ParseLine(.last, .this, .next, .conv)
-				
-				do CodeStream.WriteLine(conv("Line")) 
-			} 
 			
-			if ..#INDENTATION { 
-				set this("Indent") = this("Indent") + next("Indent")
-				set next("Indent") = 0
-			} 
+			if newLineCount > 3 continue 
 			
-			set last("Line") = conv("Line")
-			set conv("Line") = ""
+			do ..ParseLine(.last, .this, .next, .conv)
 			continue
+			
 		} else { 
 			// Reset count of consecutive new lines
 			set newLineCount = 0
@@ -358,6 +335,15 @@ ClassMethod ParseStream(ByRef CodeStream, Language = "COS", Info)
 		
 		do ..ParseFragment(.last, .this, .next, .conv)
 	}
+}
+
+/// Output line to converted stream.
+ClassMethod WriteLine(ByRef last, ByRef this, ByRef next, ByRef conv)
+{
+	do conv("CodeStream").WriteLine(conv("Line")) 
+	set last("Line") = conv("Line")
+	set conv("Line") = ""
+	quit
 }
 
 ClassMethod ParseLine(ByRef last, ByRef this, ByRef next, ByRef conv)
@@ -407,14 +393,63 @@ ClassMethod ParseLine(ByRef last, ByRef this, ByRef next, ByRef conv)
 					if varChar '? 1(1A,1N,1"%") quit
 					set var = varChar _ var
 				} 
-				if endIndex { 
-					set conv("Line") = $extract(conv("Line"), 1, charIndex)
-						_ $$$MappedValue("COS", $$$COSFunction, "$get")
-						_ "(" _ var _ ".Data(" _ args _ "))" _ $extract(conv("Line"), endIndex, *)
+				if (var ? @..#CHANGEGETVARIABLE) { 
+					if endIndex { 
+						set conv("Line") = $extract(conv("Line"), 1, charIndex)
+							_ $$$MappedValue("COS", $$$COSFunction, "$get")
+							_ "(" _ var _ ".Data(" _ args _ "))" _ $extract(conv("Line"), endIndex, *)
+					} 
 				} 
 			} 
 		} 
+	} 	 
+
+	if ..#INDENTATION { 
+		set this("Indent") = this("Indent") + next("Indent")
+		set next("Indent") = 0
+	} 
+	
+	do ..WriteLine(.last, .this, .next, .conv)
+}
+
+/// newLine is an optional parameter which can be used to insert fragements 
+ClassMethod InsertFragment(ByRef last, ByRef this)
+{
+	set last("Lang") = this("Lang")
+	set last("Type") = this("Type")
+	set last("Frag") = this("Frag")
+	if this("Type") '= $$$COSWhiteSpace { 
+		set last("NonSpaceLang") = this("Lang")
+		set last("NonSpaceType") = this("Type")
+		set last("NonSpaceFrag") = this("Frag")
 	}
+}
+
+ClassMethod ReadFragment(ByRef last, ByRef this, ByRef next)
+{
+	set last("Lang") = this("Lang")
+	set last("Type") = this("Type")
+	set last("Frag") = this("Frag")
+	if this("Type") '= $$$COSWhiteSpace { 
+		set last("NonSpaceLang") = this("Lang")
+		set last("NonSpaceType") = this("Type")
+		set last("NonSpaceFrag") = this("Frag")
+	} 
+	
+	set this("Lang") = next("Lang")
+	set this("Type") = next("Type")
+	set this("Frag") = next("Frag")
+	
+	if 'this("SyntaxStream").AtEnd { 
+		set nextLine = this("SyntaxStream").ReadLine() 
+		set next("Lang") = $piece(nextLine, ",", 1) 
+		set next("Type") = $piece(nextLine, ",", 2) 
+		set next("Frag") = $piece(nextLine, ",", 3, *) 
+	} else { 
+		set this("AtEnd") = 1
+	} 
+	
+	if ..#DEBUG write !, nextLine
 }
 
 ClassMethod ParseFragment(ByRef last, ByRef this, ByRef next, ByRef conv)
@@ -565,6 +600,7 @@ ClassMethod ParseFragment(ByRef last, ByRef this, ByRef next, ByRef conv)
 			set conv("Line") = conv("Line") _ conv("Frag")
 			quit
 		} 
+		
 		// Operators and Braces
 		if (this("Type") = $$$COSOperator) || (this("Type") = $$$COSBrace) { 
 			set conv("Frag") = $zconvert(this("Frag"), "L") 
@@ -578,11 +614,93 @@ ClassMethod ParseFragment(ByRef last, ByRef this, ByRef next, ByRef conv)
 				// Post conditional expressions can only use spaces inside parenthesis.
 				// Pattern match cannot be broken up with spaces.
 				if ('conv("PostConditional")) && (".'" '[ conv("Frag")) && ((conv("Frag") '= "+") || $case(last("NonSpaceType"), $$$COSLocalvariable:1, $$$COSNumber:1, :0)) { 
-					if last("Type") '= $$$COSWhiteSpace set conv("Frag") = " " _ conv("Frag")
-					if next("Type") '= $$$COSWhiteSpace set conv("Frag") = conv("Frag") _ " "
+					if $case(last("Type"),$$$COSWhiteSpace:0,"":0,:1) set conv("Frag") = " " _ conv("Frag")
+					if $case(next("Type"),$$$COSWhiteSpace:0,"":0,:1) set conv("Frag") = conv("Frag") _ " "
 				} 
 			} 
+			
+			if ..#BRACEPOSITION { 
+				if (this("Frag") = "}") { 
+					
+					if (last("NonSpaceLang") '= "\n") { 
+						// Note existing values
+						set temp("This", "Lang") = this("Lang")
+						set temp("This", "Type") = this("Type")
+						set temp("This", "Frag") = this("Frag")
+						set temp("Conv", "Frag") = conv("Frag")
+						
+						// Insert new line and opening whitespace
+						set this("Lang") = "\n"
+						set this("Type") = ""
+						set this("Frag") = ""
+						do ..InsertFragment(.last, .this)
+						do ..ParseLine(.last, .this, .next, .conv)
+						
+						set this("Lang") = this("Lang")
+						set this("Type") = $case(this("Lang"), 
+							"COS":$$$COSWhiteSpace, 
+							"CSS":$$$CSSWhiteSpace, 
+							"HTML":$$$HTMLWhiteSpace, 
+							"JAVASCRIPT":$$$JAVASCRIPTWhiteSpace, 
+							"SQL":$$$SQLWhiteSpace, 
+							:"")
+						set this("Frag") = ..#OPENWHITESPACE
+						do ..InsertFragment(.last, .this)
+						do ..ParseFragment(.last, .this, .next, .conv)
+						
+						// Restore Frag to be appended to conv("Line")
+						// Strip leading white space as the fragment will start on a new line.
+						set conv("Frag") = $zstrip(temp("Conv", "Frag"), "<W")
+						// Restore this values to reflect sequence
+						set this("Lang") = temp("This", "Lang")
+						set this("Type") = temp("This", "Type")
+						set this("Frag") = temp("This", "Frag")
+					} 
+				} 
+			} 
+			
 			set conv("Line") = conv("Line") _ conv("Frag") 
+			
+			if (..#BRACEPOSITION) && (this("Type") = $$$COSBrace) { 
+				// Ignore subsequent whitespace 
+				set currentWhiteSpace = ""
+				while $case(next("Lang"), 
+					"COS":next("Type") = $$$COSWhiteSpace, 
+					"CSS":next("Type") = $$$CSSWhiteSpace, 
+					"HTML":next("Type") = $$$HTMLWhiteSpace, 
+					"JAVASCRIPT":next("Type") = $$$JAVASCRIPTWhiteSpace, 
+					"SQL":next("Type") = $$$SQLWhiteSpace, 
+					:"") {  
+					do ..ReadFragment(.last, .this, .next)
+					set currentWhiteSpace = currentWhiteSpace _ this("Frag")
+				} 
+				
+				if (next("Lang") '= "\n") 
+				&& (next("Frag") '= "else")
+				&& (next("Frag") '= "elseif")
+				&& (next("Frag") '= "catch") { 
+					// Insert new line and opening whitespace
+					set this("Lang") = "\n"
+					set this("Type") = ""
+					set this("Frag") = ""
+					do ..InsertFragment(.last, .this)
+					do ..ParseLine(.last, .this, .next, .conv)
+					
+					set this("Lang") = this("Lang")
+					set this("Type") = $case(this("Lang"), 
+						"COS":$$$COSWhiteSpace, 
+						"CSS":$$$CSSWhiteSpace, 
+						"HTML":$$$HTMLWhiteSpace, 
+						"JAVASCRIPT":$$$JAVASCRIPTWhiteSpace, 
+						"SQL":$$$SQLWhiteSpace, 
+						:"")
+					set this("Frag") = ..#OPENWHITESPACE
+					do ..InsertFragment(.last, .this)
+					do ..ParseFragment(.last, .this, .next, .conv)					
+				} else { 
+					set conv("Line") = conv("Line") _ currentWhiteSpace 
+				} 
+			} 
 			quit
 		} 
 		// Delimiter
@@ -955,4 +1073,3 @@ ClassMethod InitialiseMap()
 }
 
 }
-
