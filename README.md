@@ -9,34 +9,34 @@ Change the source control class to point to Code Standards using System Manageme
 ### Options
 The code standards class have a number of options which are defined as class parameters.  Modify the values and recompile the class to vary the options.
 
-- Indentation
+- Indentation  
 Format code based on the surrounding structures.
 
-- Code Expansion
+- Code Expansion  
 Many Object Script commands and variables have short alternative syntax.  When CODEEXPANSION is true these will be converted to use the full text.
 
-- Object Script Case Conversion
+- Object Script Case Conversion  
 COSCASE controls the case which is used for Object Script functions, commands and special variables.
 
-- Object Script Comment
+- Object Script Comment  
 COSCOMMENT controls the comment style used.  Options are ;, //, or #;.
 
-- Object Script White Space
+- Object Script White Space  
 When COSWHITESPACE is true white space will be inserted either side of operators and after each argument.
 
-- SQL Case Conversion
+- SQL Case Conversion  
 SQLCASE controls the case which is used for SQL keywords and operators.
 
-- Open Whitespace Character
+- Open Whitespace Character  
 Used as first character for lines beginning with white space.
 
-- Change Get methods 
+- Change Get methods   
 Objects such as %ResultSet, %CSP.Session, %CSP.Request provide Get methods for backwards compatibility.
 There is performance gain by using $get(object.Data("...")) instead of object.Get("...")
 When CHANGEGET is true these constructs are automatically applied.
 
-- Change Get Variable
+- Change Get Variable  
 CHANGEGET functionality is restricted to variable matching this pattern.
 
-- Brace Postion
+- Brace Postion  
 Adjust brace usage to end the line with opening brace and start new lines for closing brace.
