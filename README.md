@@ -1,4 +1,4 @@
-### Automated Code Standards
+# Automated Code Standards
 
 This project provides a InterSystems IRIS class which utilises server side source control hooks to automatically apply some coding standards when a document is saved.
 
@@ -6,7 +6,7 @@ This project provides a InterSystems IRIS class which utilises server side sourc
 Load the class to target InterSystems IRIS development environment.  Modify the class to inherit from existing source control class.  Use %Studio.SourceControl.Base if there is no server side source control for the environment.
 Change the source control class to point to Code Standards using System Management Portal. 
 
-# Options
+### Options
 The code standards class have a number of options which are defined as class parameters.  Modify the values and recompile the class to vary the options.
 
 - Indentation
