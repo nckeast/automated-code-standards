@@ -589,6 +589,10 @@ ClassMethod ParseFragment(ByRef last, ByRef this, ByRef next, ByRef conv)
 		if (this("Type") = $$$COSFunction) || (this("Type") = $$$COSCommand) || (this("Type") = $$$COSSystemvariable) { 
 			set conv("Frag") = this("Frag")
 			
+			if (this("Type") = $$$COSCommand) {
+				set conv("PostConditional") = 0
+			}
+			
 			if ..#CODEEXPANSION { 
 				set conv("Frag") = $get($$$MappedValue(this("Lang"), this("Type"), $zconvert(conv("Frag"), "L")), conv("Frag")) 
 			} 
@@ -613,7 +617,7 @@ ClassMethod ParseFragment(ByRef last, ByRef this, ByRef next, ByRef conv)
 				//  by reference, not, and post conditions.
 				// Post conditional expressions can only use spaces inside parenthesis.
 				// Pattern match cannot be broken up with spaces.
-				if ('conv("PostConditional")) && (".'" '[ conv("Frag")) && ((conv("Frag") '= "+") || $case(last("NonSpaceType"), $$$COSLocalvariable:1, $$$COSNumber:1, :0)) { 
+				if ('conv("PostConditional")) && (".'" '[ conv("Frag")) && (((conv("Frag") '= "+") && (conv("Frag") '= "-")) || $case(last("NonSpaceType"), $$$COSLocalvariable:1, $$$COSNumber:1, :0)) { 
 					if $case(last("Type"),$$$COSWhiteSpace:0,"":0,:1) set conv("Frag") = " " _ conv("Frag")
 					if $case(next("Type"),$$$COSWhiteSpace:0,"":0,:1) set conv("Frag") = conv("Frag") _ " "
 				} 
@@ -678,7 +682,8 @@ ClassMethod ParseFragment(ByRef last, ByRef this, ByRef next, ByRef conv)
 				if (next("Lang") '= "\n") 
 				&& (next("Frag") '= "else")
 				&& (next("Frag") '= "elseif")
-				&& (next("Frag") '= "catch") { 
+				&& (next("Frag") '= "catch")
+				&& (next("Frag") '= "while") { 
 					// Insert new line and opening whitespace
 					set this("Lang") = "\n"
 					set this("Type") = ""
@@ -712,7 +717,12 @@ ClassMethod ParseFragment(ByRef last, ByRef this, ByRef next, ByRef conv)
 					// Include whitespace before the next parameter.
 					if next("Type") '= $$$COSWhiteSpace set conv("Frag") = conv("Frag") _ " "
 				}	
-				set conv("PostConditional") = (conv("Frag") = ":")
+				// Post Conditional code may include all types of code.
+				// Incorrect spacing will invalidate Post Conditional code.
+				// Retain the setting for the rest of the line.
+				if 'conv("PostConditional") {
+					set conv("PostConditional") = (conv("Frag") = ":")
+				}
 			} 
 			set conv("Line") = conv("Line") _ conv("Frag") 
 			quit
